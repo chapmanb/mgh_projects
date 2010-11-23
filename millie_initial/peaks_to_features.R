@@ -27,10 +27,37 @@ getMartData <- function(mart, ftype) {
   if (file.exists(save.file)) {
     mart.data <- import(save.file)
   } else {
-    mart.data <- getAnnotation(ens.mart, ftype)
+    if (ftype == "ncRNA") {
+      mart.data <- getNcData(ftype)
+    } else {
+      mart.data <- getAnnotation(ens.mart, ftype)
+    }
     export(mart.data, save.file)
   }
   mart.data
+}
+
+# Retrieve non-coding annotations not covered by ChIPpeakAnno
+# http://uswest.ensembl.org/info/docs/genebuild/ncrna.html
+getNcData <- function(ftype) {
+  mart <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+  other.nc <- c("IG_C_pseudogene", "IG_J_pseudogene", "IG_V_pseudogene",
+                "Mt_tRNA", "Mt_tRNA_pseudogene", "TR_V_pseudogene")
+  nc.types <- c("lincRNA", "miRNA_pseudogene", "misc_RNA_pseudogene",
+                "polymorphic_pseudogene", "pseudogene",
+                "snoRNA", "snoRNA_pseudogene", "snRNA_pseudogene",
+                "processed_transcript")
+  attrs <- c("ensembl_gene_id", "chromosome_name", "start_position",
+             "end_position", "strand", "description", "gene_biotype")
+  result <- getBM(attributes=attrs, filters=c("biotype"), values=nc.types, mart=mart)
+  # remove duplicated
+  result <- unique(result)
+  result <- result[order(result[,3]), ]              
+  duplicated.id <- result[duplicated(result[,1]), 1]
+  result <- result[!duplicated(result[,1]), ]
+  result.rd <- RangedData(IRanges(start=as.numeric(result[,3]), end=as.numeric(result[,4]),
+                 names= as.character(result[,1])), strand=result[,5],
+                 description=as.character(result[,6]), space=as.character(result[,2]))
 }
 
 # Associate features with peaks in the input dataframe
@@ -66,9 +93,9 @@ final.table <- NULL
 #want <- c("MACS_peak_99175", "MACS_peak_100031")
 #cur.table <- as.data.frame(input.rd)
 #cur.table <- cur.table[cur.table$name %in% want, ]
-#features <- c("TSS")
+#features <- c("ncRNA")
 cur.table <- as.data.frame(input.rd)
-features <- c("miRNA", "Exon", "5utr", "3utr", "TSS")
+features <- c("ncRNA", "miRNA", "Exon", "5utr", "3utr", "TSS")
 print(summary(cur.table))
 for (ftype in features) {
   annotate <- annotateWithFeature(ens.mart, ftype, cur.table)
