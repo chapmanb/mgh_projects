@@ -27,7 +27,7 @@ getMartData <- function(mart, ftype) {
   if (file.exists(save.file)) {
     mart.data <- import(save.file)
   } else {
-    if (ftype == "ncRNA") {
+    if (ftype %in% c("ncRNA", "lincRNA")) {
       mart.data <- getNcData(ftype)
     } else {
       mart.data <- getAnnotation(ens.mart, ftype)
@@ -43,10 +43,14 @@ getNcData <- function(ftype) {
   mart <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
   other.nc <- c("IG_C_pseudogene", "IG_J_pseudogene", "IG_V_pseudogene",
                 "Mt_tRNA", "Mt_tRNA_pseudogene", "TR_V_pseudogene")
-  nc.types <- c("lincRNA", "miRNA_pseudogene", "misc_RNA_pseudogene",
-                "polymorphic_pseudogene", "pseudogene",
-                "snoRNA", "snoRNA_pseudogene", "snRNA_pseudogene",
-                "processed_transcript")
+  if (ftype == "ncRNA") {
+    nc.types <- c("lincRNA", "miRNA_pseudogene", "misc_RNA_pseudogene",
+                  "polymorphic_pseudogene", "pseudogene",
+                  "snoRNA", "snoRNA_pseudogene", "snRNA_pseudogene",
+                  "processed_transcript")
+  } else if (ftype == "lincRNA") {
+    nc.types <- c("lincRNA")
+  }
   attrs <- c("ensembl_gene_id", "chromosome_name", "start_position",
              "end_position", "strand", "description", "gene_biotype")
   result <- getBM(attributes=attrs, filters=c("biotype"), values=nc.types, mart=mart)
@@ -75,6 +79,7 @@ annotateWithFeature <- function(mart, ftype, input.df) {
   cur.found <- unique(as.integer(ann.df$peak))
   if (length(cur.found) > 0) {
     input.this <- input.df[cur.found, ]
+    if (ftype == "TSS") ftype <- "intron"
     input.this$ftype <- ftype
     print(ftype)
     print(summary(input.this))
@@ -95,7 +100,7 @@ final.table <- NULL
 #cur.table <- cur.table[cur.table$name %in% want, ]
 #features <- c("ncRNA")
 cur.table <- as.data.frame(input.rd)
-features <- c("ncRNA", "miRNA", "Exon", "5utr", "3utr", "TSS")
+features <- c("lincRNA", "ncRNA", "miRNA", "Exon", "5utr", "3utr", "TSS")
 print(summary(cur.table))
 for (ftype in features) {
   annotate <- annotateWithFeature(ens.mart, ftype, cur.table)
