@@ -14,6 +14,8 @@ import os
 import subprocess
 
 import yaml
+import pysam
+from Bio.Seq import Seq
 
 from bcbio import picard
 
@@ -21,8 +23,9 @@ def main(config_file):
     with open(config_file) as in_handle:
         config = yaml.load(in_handle)
 
-    picard_run = picard.PicardRunner(config["programs"]["picard"])
-    fastq_in = convert_to_fastq(config["files"]["nomatch"], picard_run)
+    #picard_run = picard.PicardRunner(config["programs"]["picard"])
+    pull_align_from_sam(config["files"]["align"])
+    fastq_in = pull_noalign_from_sam(config["files"]["align"])
     ref_genome = config["files"]["reference"]
     trim_size = str(fastq_half_size(fastq_in))
     run_bowtie(fastq_in, ref_genome, "3trim", "0", 1e6,
@@ -59,6 +62,40 @@ def convert_to_fastq(in_file, picard_run):
         opts = [("INPUT", in_file),
                 ("FASTQ", out_file)]
         picard_run.run("SamToFastq", opts)
+    return out_file
+
+def pull_noalign_from_sam(sam_align):
+    """Extract non-aligning reads from the input SAM file.
+    """
+    out_file = "%s-nomatch.fastq" % os.path.splitext(sam_align)[0]
+    if not os.path.exists(out_file):
+        with open(out_file, "w") as out_handle:
+            in_bam = pysam.Samfile(sam_align, 'r')
+            for read in in_bam:
+                if read.is_unmapped:
+                    out_handle.write("@%s\n%s\n+\n%s\n" % (read.qname,
+                        read.seq, read.qual))
+            in_bam.close()
+    return out_file
+
+def pull_align_from_sam(sam_align):
+    """Extract aligning reads from the input SAM file.
+    """
+    out_file = "%s-match.fastq" % os.path.splitext(sam_align)[0]
+    if not os.path.exists(out_file):
+        with open(out_file, "w") as out_handle:
+            in_bam = pysam.Samfile(sam_align, 'r')
+            for read in in_bam:
+                if not read.is_unmapped:
+                    if read.is_reverse:
+                        seq = str(Seq(read.seq).reverse_complement())
+                        qual = "".join(reversed(list(read.qual)))
+                    else:
+                        seq = read.seq
+                        qual = read.qual
+                    out_handle.write("@%s\n%s\n+\n%s\n" % (read.qname,
+                        seq, qual))
+            in_bam.close()
     return out_file
 
 if __name__ == "__main__":
