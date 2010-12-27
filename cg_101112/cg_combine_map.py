@@ -12,7 +12,9 @@ import subprocess
 import yaml
 import pysam
 from Bio.SeqIO.QualityIO import FastqGeneralIterator
+from Bio import SeqIO
 
+from BCBio import GFF
 from bcbio.picard import run, PicardRunner
 
 def main(config_file):
@@ -103,10 +105,38 @@ def bam_to_wig(in_bam):
 def plot_chr_dist(bam_files, ref, picard, scriptdir):
     """Calculate stats on chromosome distribution of reads.
     """
-
+    combine_bam = run.picard_merge(picard, bam_files)
     cl = [os.path.join(scriptdir, "chr_bias.R"), combine_bam,
           ref["genome"], ref["build"])
     subprocess.check_call(cl)
+
+def _filter_features(in_recs, max_size):
+    """Remove large features from record which hide sub features in IGV.
+    """
+    for rec in in_recs:
+        final = []
+        for f in rec.features:
+            if len(f.location) < max_size:
+                final.append(f)
+            else:
+                for sub in f.sub_features:
+                    if len(sub.location) < max_size:
+                        final.append(sub)
+        rec.annotations = {}
+        rec.features = final
+        yield rec
+
+def genbank_to_gff(gb_file):
+    """Convert GenBank file to GFF for IGV display.
+    """
+    max_size = 1e4
+    gff_file = "%s.gff3" % os.path.splitext(gb_file)[0]
+    if not os.path.exists(gff_file):
+        with open(gb_file) as in_handle:
+            with open(gff_file, "w") as out_handle:
+                gb_iterator = SeqIO.parse(in_handle, "genbank")
+                GFF.write(_filter_features(gb_iterator, max_size),
+                          out_handle)
 
 def do_aligns(in_fastq, references, errors, outdir, picard, scriptdir):
     """Perform final alignments, preparing sense/anti BAM and BigWig files.
@@ -122,6 +152,8 @@ def do_aligns(in_fastq, references, errors, outdir, picard, scriptdir):
             bam_to_wig(sort_bam)
         if ref.get("chr_dist", False):
             plot_chr_dist(cur_bams, ref, picard, scriptdir)
+        if ref.get("feature_prep", False):
+            genbank_to_gff("%s.gb" % ref["file"])
 
 def run_bowtie(fastq_in, ref_genome, file_ext, errors="2",
         limit=None, extra_params=None, out_dir=None):
