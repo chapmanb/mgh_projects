@@ -10,13 +10,18 @@ import collections
 import subprocess
 
 import yaml
+import pysam
 from Bio.SeqIO.QualityIO import FastqGeneralIterator
+
+from bcbio.picard import run, PicardRunner
 
 def main(config_file):
     with open(config_file) as in_handle:
         config = yaml.load(in_handle)
+    picard = PicardRunner(config["programs"]["picard"])
     errors = config["algorithm"].get("errors", None)
     outdir = config["outdir"]
+    scriptdir = os.path.dirname(__file__)
     if not os.path.exists(outdir):
         os.makedirs(outdir)
     map_trim = trim_three_end(config["fastq"]["align"], 2)
@@ -24,7 +29,8 @@ def main(config_file):
     if errors is None:
         test_errors(full_fastq, config["reference"])
     else:
-        do_aligns(full_fastq, config["reference"], errors, outdir)
+        do_aligns(full_fastq, config["reference"], errors, outdir, picard,
+                  scriptdir)
 
 def trim_three_end(in_fastq, num_bases):
     out_fastq = "%s-trimend%s" % os.path.splitext(in_fastq)
@@ -67,15 +73,55 @@ def test_errors(in_fastq, references):
     error_checks = [0, 1, 2, 3]
     for error in error_checks:
         for ref in references:
-            print ref, error
-            run_bowtie(in_fastq, ref, None, error, 1e6)
+            print ref["file"], error
+            run_bowtie(in_fastq, ref["file"], None, error, 1e6)
 
-def do_aligns(in_fastq, references, errors, outdir):
+def to_strand_bam(in_file, forward=True):
+    """Convert to BAM file with either forward or reverse strand.
+    """
+    fext = "for" if forward else "rev"
+    out_file = "%s-%s.bam" % (os.path.splitext(in_file)[0], fext)
+    if not os.path.exists(out_file):
+        in_sam = pysam.Samfile(in_file, "r")
+        out_bam = pysam.Samfile(out_file, "wb", template=in_sam)
+        for read in in_sam:
+            if not read.is_unmapped:
+                if ((forward and not read.is_reverse) or
+                    (not forward and read.is_reverse)):
+                    out_bam.write(read)
+        in_sam.close()
+        out_bam.close()
+    return out_file
+
+def bam_to_wig(in_bam):
+    out_file = "%s.bigwig" % os.path.splitext(in_bam)[0]
+    if not os.path.exists(out_file):
+        cl = ["bam_to_wiggle.py", in_bam, "--outfile=%s" % out_file]
+        subprocess.check_call(cl)
+    return out_file
+
+def plot_chr_dist(bam_files, ref, picard, scriptdir):
+    """Calculate stats on chromosome distribution of reads.
+    """
+
+    cl = [os.path.join(scriptdir, "chr_bias.R"), combine_bam,
+          ref["genome"], ref["build"])
+    subprocess.check_call(cl)
+
+def do_aligns(in_fastq, references, errors, outdir, picard, scriptdir):
     """Perform final alignments, preparing sense/anti BAM and BigWig files.
     """
     for ref in references:
-        out_sam = run_bowtie(in_fastq, ref, os.path.basename(ref), errors,
-                             out_dir=outdir)
+        out_sam = run_bowtie(in_fastq, ref["file"], os.path.basename(ref["file"]),
+                             errors, out_dir=outdir)
+        cur_bams = []
+        for strand in [True, False]:
+            out_bam = to_strand_bam(out_sam, strand)
+            sort_bam = run.picard_sort(picard, out_bam)
+            cur_bams.append(sort_bam)
+            bam_to_wig(sort_bam)
+        if ref.get("chr_dist", False):
+            plot_chr_dist(cur_bams, ref, picard, scriptdir)
 
 def run_bowtie(fastq_in, ref_genome, file_ext, errors="2",
         limit=None, extra_params=None, out_dir=None):
