@@ -6,6 +6,8 @@ Usage:
 """
 import os
 import sys
+import glob
+import shutil
 import collections
 import subprocess
 
@@ -33,6 +35,10 @@ def main(config_file):
     else:
         do_aligns(full_fastq, config["reference"], errors, outdir, picard,
                   scriptdir)
+    final_dir = os.path.join(outdir, os.pardir, "final")
+    if not os.path.exists(final_dir):
+        os.makedirs(final_dir)
+    prepare_final(full_fastq, config["reference"], outdir, final_dir)
 
 def trim_three_end(in_fastq, num_bases):
     out_fastq = "%s-trimend%s" % os.path.splitext(in_fastq)
@@ -106,8 +112,9 @@ def plot_chr_dist(bam_files, ref, picard, scriptdir):
     """Calculate stats on chromosome distribution of reads.
     """
     combine_bam = run.picard_merge(picard, bam_files)
-    cl = [os.path.join(scriptdir, "chr_bias.R"), combine_bam,
-          ref["genome"], ref["build"])
+    run.picard_index(picard, combine_bam)
+    cl = ["Rscript", os.path.join(scriptdir, "chr_bias.R"), combine_bam,
+          ref["genome"], ref["build"]]
     subprocess.check_call(cl)
 
 def _filter_features(in_recs, max_size):
@@ -151,7 +158,8 @@ def do_aligns(in_fastq, references, errors, outdir, picard, scriptdir):
             cur_bams.append(sort_bam)
             bam_to_wig(sort_bam)
         if ref.get("chr_dist", False):
-            plot_chr_dist(cur_bams, ref, picard, scriptdir)
+            #plot_chr_dist(cur_bams, ref, picard, scriptdir)
+            pass
         if ref.get("feature_prep", False):
             genbank_to_gff("%s.gb" % ref["file"])
 
@@ -173,6 +181,50 @@ def run_bowtie(fastq_in, ref_genome, file_ext, errors="2",
         print " ".join(cl)
         subprocess.check_call(cl)
     return out_file
+
+def _clean_filename(fname):
+    to_rem = ["-final", "-sort", "-merge"]
+    for rem in to_rem:
+        fname = fname.replace(rem, "")
+    return fname
+
+def _make_outdir(outdir_base, base_ref):
+    outdir = os.path.join(outdir_base, base_ref)
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
+    return outdir
+
+def _copy_galaxy_files(base, base_ref, outdir_base):
+    outdir = _make_outdir(outdir_base, base_ref)
+    exts = ["-sort.bam", "-sort.bigwig", ".pdf"]
+    for ext in exts:
+        for initial in glob.glob("%s-%s*%s" % (base, base_ref, ext)):
+            final = os.path.join(outdir, _clean_filename(os.path.basename(initial)))
+            shutil.copy(initial, final)
+
+def _copy_igv_files(base, base_ref, ref_file, outdir_base):
+    outdir = _make_outdir(outdir_base, base_ref)
+    exts = ["-sort.bam", "-sort.bam.bai"]
+    for ext in exts:
+        for initial in glob.glob("%s-%s*%s" % (base, base_ref, ext)):
+            final = os.path.join(outdir, _clean_filename(os.path.basename(initial)))
+            shutil.copy(initial, final)
+    rexts = [".fasta", ".gff3"]
+    for ext in rexts:
+        initial = "%s%s" % (ref_file, ext)
+        final = os.path.join(outdir, os.path.basename(initial))
+        shutil.copy(initial, final)
+
+def prepare_final(fastq_in, refs, aligndir, outdir):
+    """Organize output files for re-distribution.
+    """
+    base = os.path.join(aligndir, os.path.splitext(os.path.basename(fastq_in))[0])
+    for ref in refs:
+        base_ref = os.path.basename(ref["file"])
+        if ref.get("chr_dist", False):
+            _copy_galaxy_files(base, base_ref, outdir)
+        if ref.get("feature_prep", False):
+            _copy_igv_files(base, base_ref, ref["file"], outdir)
 
 if __name__ == "__main__":
     main(*sys.argv[1:])

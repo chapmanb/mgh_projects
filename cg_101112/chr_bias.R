@@ -16,11 +16,14 @@ library(GenomicRanges)
 library(Rsamtools)
 library(ggplot2)
 
+options(stringsAsFactors=FALSE)
+
 args <- commandArgs(trailingOnly=TRUE)
 names(args) <- c("infile", "genome", "build")
 
 library(paste("BSgenome", args["genome"], "UCSC", args["build"], sep="."),
         character.only=TRUE)
+min.records <- 5000
 genome <- get(args["genome"])
 plot.file <- gsub('.bam', '-sizes.pdf', args["infile"])
 reg.plot.file <- gsub('.bam', '-reg.pdf', args["infile"])
@@ -41,9 +44,10 @@ seqlengths2gr <- function(x, strand="*") {
 gr <- seqlengths2gr(seqlengths(genome))
 bamCnt <- countBam(args["infile"], param=ScanBamParam(which=gr))
 
-# Merge and plot
-chrSizesReads <- merge(maskedSizes, bamCnt, sort=FALSE)
-print(head(chrSizesReads))
+# Merge, subset based on a minimum number of mapped records, and plot
+allCombined <- merge(maskedSizes, bamCnt, sort=FALSE)
+chrSizesReads <- subset(allCombined, records > min.records)
+print(chrSizesReads)
 p <- ggplot(data=chrSizesReads, aes(x=unmaskedsize, y=records, label=space)) +
      geom_point() + geom_text(vjust=2, size=3) +
      stat_smooth(method="lm", se=TRUE, level=0.95) +
@@ -55,7 +59,7 @@ ggsave(plot.file, p, width=6, height=6)
 # Check for outliers with linear regression
 size.lm <- lm(records~unmaskedsize, data=chrSizesReads)
 print(summary(size.lm))
-p <- qplot(chrSizesReads$space,rstandard(size.lm)) +
+p <- qplot(chrSizesReads$space, rstandard(size.lm)) +
      aes(label=chrSizesReads$space) +
      geom_text(vjust=2, size=3) +
      xlab("Chromosome") +
