@@ -11,6 +11,7 @@ analysis.
 import sys
 import os
 import csv
+import math
 import subprocess
 import collections
 import contextlib
@@ -29,32 +30,80 @@ def main(config_file):
     align_dir = config['directories']['align']
     count_dir = config['directories']['counts']
     diff_dir = config['directories']['diff']
+    all_sizes = range(config["analysis"]["min_filter_size"],
+                      config["analysis"]["max_filter_size"] + 1)
     for dirname in [trim_dir, align_dir, count_dir, diff_dir]:
         if not os.path.exists(dirname):
             os.makedirs(dirname)
     exp_counts = dict()
-    for exp in config['experiments']:
-        fasta_file = run_trim(exp, config, trim_dir)
-        align_bam = align_and_sort(fasta_file, exp, config, align_dir)
-        filter_bam = filter_rna(align_bam, config["annotations"]["filter"])
-        count_file = counts_of_interest(exp, config, filter_bam,
-                config["annotations"]["find"], count_dir)
-        exp_counts[exp['name']] = count_file
+    for approach in config['analysis']['diff_approaches']:
+        exp_counts[approach] = dict()
+        for exp in config['experiments']:
+            fasta_file = run_trim(exp, config, trim_dir)
+            align_bam = align_and_sort(fasta_file, exp, config, align_dir)
+            filter_bam = filter_rna(align_bam, config["annotations"]["filter"],
+                                    all_sizes)
+            count_file = generate_exp_counts(approach, exp, config, all_sizes,
+                                             filter_bam, count_dir)
+            exp_counts[approach][exp['name']] = count_file
     for diff in config['differential']:
         differential_analysis(diff, exp_counts, config, diff_dir)
 
 def differential_analysis(diff, exp_counts, config, diff_dir):
     """Prepare count files and do differential analysis.
     """
-    count_file = os.path.join(diff_dir, "%s.csv" % diff['name'])
+    if diff["algorithm"] == "edgeR":
+        _diff_analysis_edgeR(diff, exp_counts, config, diff_dir)
+    elif diff["algorithm"] == "fold_change":
+        out_file = os.path.join(diff_dir, "%s-%s-diffs.csv" %
+                                (diff['name'], diff['approach']))
+        if not os.path.exists(out_file):
+            _diff_fold_change(diff, exp_counts, config, out_file)
+    else:
+        raise NotImplementedError(diff["algorithm"])
+
+def _diff_fold_change(diff, exp_counts, config, out_file):
+    """Identify differences based on a fold change difference.
+    """
+    assert len(diff["control"]) == 1
+    assert len(diff["experimental"]) == 1
+    thresh = float(config["analysis"]["fold_change"])
+    cname = diff["control"][0]
+    ename = diff["experimental"][0]
+    c_counts = _read_count_file(exp_counts[diff["approach"]][cname])
+    e_counts = _read_count_file(exp_counts[diff["approach"]][ename])
+    all_regions = sorted(list(set(c_counts.keys() + e_counts.keys())))
+    with open(out_file, "w") as out_handle:
+        writer = csv.writer(out_handle)
+        writer.writerow(["chrom", "start", "end", cname, ename, "fold-change"])
+        for region in all_regions:
+            c_score = c_counts.get(region, 1.0)
+            e_score = e_counts.get(region, 1.0)
+            diff = c_score / e_score
+            if diff > thresh or diff < (1.0 / thresh):
+                writer.writerow(list(region) + [c_score, e_score, "%.1f" % diff])
+
+def _read_count_file(in_file):
+    counts = {}
+    with open(in_file) as in_handle:
+        reader = csv.reader(in_handle)
+        reader.next() # header
+        for chrom, start, end, count in reader:
+            counts[(chrom, start, end)] = float(count)
+    return counts
+
+def _diff_analysis_edgeR(diff, exp_counts, config, diff_dir):
+    """Calculate differential expression counts using edgeR.
+    """
+    count_file = os.path.join(diff_dir, "%s-%s.csv" % (diff['name'],
+                                                       diff['approach']))
     if not os.path.exists(count_file):
-        _write_count_file(diff, exp_counts, count_file)
-    diff_file = os.path.join(diff_dir, "%s-diffs.csv" % diff['name'])
+        _write_count_file(diff, exp_counts[diff['approach']], count_file)
+    diff_file = "%s-diffs%s" % os.path.splitext(count_file)
     if not os.path.exists(diff_file):
         cl = config["programs"]["diffexp"].split()
         cl += [count_file]
         subprocess.check_call(cl)
-    return diff_file
 
 def _write_count_file(diff, exp_counts, count_file):
     with open(count_file, "w") as out_handle:
@@ -71,37 +120,77 @@ def _write_count_file(diff, exp_counts, count_file):
                 out_info.append(sum(int(i) for i in line[1:]))
             writer.writerow([str(i) for i in out_info])
 
-def counts_of_interest(exp, config, in_bam, find_bed, count_dir):
-    all_sizes = range(config["analysis"]["min_filter_size"],
-                      config["analysis"]["max_filter_size"] + 1)
-    out_file = os.path.join(count_dir, "%s-counts.csv" % exp['name'])
-    if not os.path.exists(out_file):
+def generate_exp_counts(approach, exp, config, all_sizes, in_bam, count_dir):
+    """Generate count file for an experiment using the specific approach.
+    """
+    out_file = os.path.join(count_dir, "%s-%s-counts.csv" %
+                            (exp['name'], approach))
+    if not os.path.exists("%s.bai" % in_bam):
         pysam.index(in_bam)
-        with contextlib.nested(open(out_file, "w"), open(find_bed)) as \
-                              (out_handle, in_handle):
-            writer = csv.writer(out_handle)
-            writer.writerow(["name"] + ["%sbp" % s for s in all_sizes])
-
-            sam_reader = pysam.Samfile(in_bam, "rb")
-            sizes = collections.defaultdict(int)
-            names_seen = dict()
-            for read in sam_reader:
-                if not names_seen.has_key(read.qname):
-                    sizes[read.rlen] += 1
-                    names_seen[read.qname] = ""
-            writer.writerow(["total"] + [str(sizes[s]) for s in all_sizes])
-            sam_reader.close()
-
-            sam_reader = pysam.Samfile(in_bam, "rb")
-            for c, s, e, name in csv.reader(in_handle, dialect="excel-tab"):
-                sizes = collections.defaultdict(int)
-                for read in sam_reader.fetch(c, int(s), int(e)):
-                    sizes[read.rlen] += 1
-                writer.writerow([name] + [str(sizes[s]) for s in all_sizes])
-            sam_reader.close()
+    if not os.path.exists(out_file):
+        if approach == "known":
+            counts_of_interest(config, in_bam, config["annotations"]["find"],
+                               all_sizes, out_file)
+        elif approach == "read":
+            raw_read_counts(config, in_bam, all_sizes, out_file)
+        else:
+            raise NotImplementedError(approach)
     return out_file
 
-def filter_rna(in_bam, filter_bed):
+def raw_read_counts(config, in_bam, all_sizes, out_file):
+    """Prepare counts for individual non-combined reads.
+
+    Reads above the mean threshold are returned, normalized
+    by reads per million.
+    """
+    sam_rdr = pysam.Samfile(in_bam, "rb")
+    region_counts = collections.defaultdict(int)
+    for i, read in enumerate(sam_rdr):
+        if read.rlen in all_sizes:
+            loc = (sam_rdr.getrname(read.rname), read.pos, read.pos + read.rlen)
+            region_counts[loc] += 1
+    total = float(sum(_totals_by_size(in_bam, all_sizes)))
+    with open(out_file, "w") as out_handle:
+        writer = csv.writer(out_handle)
+        writer.writerow(["space", "start", "end", "count"])
+        regions = region_counts.keys()
+        regions.sort()
+        for (space, start, end) in regions:
+            val = region_counts[(space, start, end)]
+            norm_val = "%.1f" % (val / total * 1e6)
+            writer.writerow([space, start, end, norm_val])
+
+def counts_of_interest(config, in_bam, find_bed, all_sizes, out_file):
+    """Provide count information in defined regions of interest from a BED file.
+    """
+    with contextlib.nested(open(out_file, "w"), open(find_bed)) as \
+                          (out_handle, in_handle):
+        writer = csv.writer(out_handle)
+        writer.writerow(["name"] + ["%sbp" % s for s in all_sizes])
+        writer.writerow(["total"] +
+                        [str(s) for s in _totals_by_size(in_bam, all_sizes)])
+        sam_reader = pysam.Samfile(in_bam, "rb")
+        for c, s, e, name in csv.reader(in_handle, dialect="excel-tab"):
+            sizes = collections.defaultdict(int)
+            for read in sam_reader.fetch(c, int(s), int(e)):
+                sizes[read.rlen] += 1
+            writer.writerow([name] + [str(sizes[s]) for s in all_sizes])
+        sam_reader.close()
+
+def _totals_by_size(in_bam, all_sizes):
+    """Get total read counts for a BAM file organized by size.
+    """
+    sam_reader = pysam.Samfile(in_bam, "rb")
+    sizes = collections.defaultdict(int)
+    names_seen = dict()
+    for read in sam_reader:
+        if not names_seen.has_key(read.qname):
+            sizes[read.rlen] += 1
+            names_seen[read.qname] = ""
+    sam_reader.close()
+    return [sizes[s] for s in all_sizes]
+
+def filter_rna(in_bam, filter_bed, filter_sizes=None):
     """Produce a new BAM file with only reads aligning to non-filtered regions.
     """
     out_bam = "%s-filter%s" % os.path.splitext(in_bam)
@@ -112,12 +201,7 @@ def filter_rna(in_bam, filter_bed):
         for read in in_sam:
             if not read.is_unmapped:
                 chrom = in_sam.getrname(read.rname)
-                if read.is_reverse:
-                    end = read.pos
-                    start = end - read.rlen
-                else:
-                    start = read.pos
-                    end = start + read.rlen
+                start, end = (read.pos, read.pos + read.rlen)
                 if len(intervals[chrom].find(start, end)) > 0:
                     to_filter[read.qname] = ""
         in_sam.close()
@@ -126,9 +210,10 @@ def filter_rna(in_bam, filter_bed):
         remain = dict()
         for read in in_sam:
             if not read.is_unmapped:
-                if not to_filter.has_key(read.qname):
-                    remain[read.qname] = ""
-                    out_sam.write(read)
+                if (filter_sizes is None or read.rlen in filter_sizes):
+                    if not to_filter.has_key(read.qname):
+                        remain[read.qname] = ""
+                        out_sam.write(read)
         in_sam.close()
         out_sam.close()
         print out_bam, "Filtered", len(to_filter), "Remain", len(remain)
