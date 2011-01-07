@@ -75,7 +75,7 @@ def _diff_fold_change(diff, exp_counts, config, out_file):
     all_regions = sorted(list(set(c_counts.keys() + e_counts.keys())))
     with open(out_file, "w") as out_handle:
         writer = csv.writer(out_handle)
-        writer.writerow(["chrom", "start", "end", cname, ename, "fold-change"])
+        writer.writerow(["chrom", "start", "end", "seq", cname, ename, "fold-change"])
         for region in all_regions:
             c_score = c_counts.get(region, 1.0)
             e_score = e_counts.get(region, 1.0)
@@ -88,8 +88,8 @@ def _read_count_file(in_file):
     with open(in_file) as in_handle:
         reader = csv.reader(in_handle)
         reader.next() # header
-        for chrom, start, end, count in reader:
-            counts[(chrom, start, end)] = float(count)
+        for chrom, start, end, seq, count in reader:
+            counts[(chrom, start, end, seq)] = float(count)
     return counts
 
 def _diff_analysis_edgeR(diff, exp_counts, config, diff_dir):
@@ -147,18 +147,19 @@ def raw_read_counts(config, in_bam, all_sizes, out_file):
     region_counts = collections.defaultdict(int)
     for i, read in enumerate(sam_rdr):
         if read.rlen in all_sizes:
-            loc = (sam_rdr.getrname(read.rname), read.pos, read.pos + read.rlen)
+            loc = (sam_rdr.getrname(read.rname), read.pos, read.pos + read.rlen,
+                   read.seq)
             region_counts[loc] += 1
     total = float(sum(_totals_by_size(in_bam, all_sizes)))
     with open(out_file, "w") as out_handle:
         writer = csv.writer(out_handle)
-        writer.writerow(["space", "start", "end", "count"])
+        writer.writerow(["space", "start", "end", "seq", "count"])
         regions = region_counts.keys()
         regions.sort()
-        for (space, start, end) in regions:
-            val = region_counts[(space, start, end)]
+        for (space, start, end, seq) in regions:
+            val = region_counts[(space, start, end, seq)]
             norm_val = "%.1f" % (val / total * 1e6)
-            writer.writerow([space, start, end, norm_val])
+            writer.writerow([space, start, end, seq, norm_val])
 
 def counts_of_interest(config, in_bam, find_bed, all_sizes, out_file):
     """Provide count information in defined regions of interest from a BED file.
