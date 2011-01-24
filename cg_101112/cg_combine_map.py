@@ -22,14 +22,22 @@ from bcbio.picard import run, PicardRunner
 def main(config_file):
     with open(config_file) as in_handle:
         config = yaml.load(in_handle)
-    picard = PicardRunner(config["programs"]["picard"])
-    errors = config["algorithm"].get("errors", None)
     outdir = config["outdir"]
     scriptdir = os.path.dirname(__file__)
     if not os.path.exists(outdir):
         os.makedirs(outdir)
-    map_trim = trim_three_end(config["fastq"]["align"], 2)
-    full_fastq = join_map_and_trim(map_trim, config["fastq"]["trim"])
+    for f in config["fastq"]:
+        align_trim_fastq(f["file"], f["name"], config, outdir, scriptdir)
+
+def align_trim_fastq(in_file, name, config, outdir, scriptdir):
+    picard = PicardRunner(config["programs"]["picard"])
+    errors = config["algorithm"].get("errors", None)
+    align_fastq, noalign_fastq = initial_alignment(in_file, name, outdir,
+                                                   errors, config)
+    noalign_trim = trim_adaptor(noalign_fastq, config)
+    map_trim = trim_three_end(align_fastq,
+                              int(config["algorithm"]["three_match_trim"]))
+    full_fastq = join_map_and_trim(map_trim, noalign_trim)
     if errors is None:
         test_errors(full_fastq, config["reference"])
     else:
@@ -40,7 +48,38 @@ def main(config_file):
         os.makedirs(final_dir)
     prepare_final(full_fastq, config["reference"], outdir, final_dir)
 
+def initial_alignment(in_file, name, outdir, errors, config):
+    """Perform initial alignment to separate aligning and non-aligning reads.
+    """
+    align_out = os.path.join(outdir, "%s-match.fastq" % name)
+    noalign_out = os.path.join(outdir, "%s-nomatch.fastq" % name)
+    if not os.path.exists(align_out) or not os.path.exists(noalign_out):
+        out_params = ["--al", align_out, "--un", noalign_out]
+        out_params += ["--solexa1.3-quals"]
+        run_bowtie(in_file, config["reference"][0]["file"], None, errors,
+                   extra_params=out_params)
+    return align_out, noalign_out
+
+def trim_adaptor(in_file, config):
+    """Trim off adaptor sequence for non-aligning reads.
+    """
+    adaptor = config["algorithm"]["adaptor"]
+    min_size = config["algorithm"]["adaptor_min_size"]
+    max_errors = config["algorithm"]["adaptor_max_errors"]
+    trim_out = "%s-trim%s" % os.path.splitext(in_file)
+    if not os.path.exists(trim_out):
+        cl = [config["programs"]["python"], config["programs"]["trim_adaptor"],
+              in_file, trim_out, adaptor, str(max_errors),
+              "--min_size=%s" % min_size]
+        subprocess.check_call(cl)
+    return trim_out
+
 def trim_three_end(in_fastq, num_bases):
+    """Remove num_bases from 3' end of input fastq file.
+
+    Used to remove non-aligning trailing bases for reads that have a small
+    amount of adaptor that cannot be removed by standard trimming.
+    """
     out_fastq = "%s-trimend%s" % os.path.splitext(in_fastq)
     if not os.path.exists(out_fastq):
         three_end_distribution(in_fastq, num_bases, 10)
@@ -158,8 +197,7 @@ def do_aligns(in_fastq, references, errors, outdir, picard, scriptdir):
             cur_bams.append(sort_bam)
             bam_to_wig(sort_bam)
         if ref.get("chr_dist", False):
-            #plot_chr_dist(cur_bams, ref, picard, scriptdir)
-            pass
+            plot_chr_dist(cur_bams, ref, picard, scriptdir)
         if ref.get("feature_prep", False):
             genbank_to_gff("%s.gb" % ref["file"])
 
