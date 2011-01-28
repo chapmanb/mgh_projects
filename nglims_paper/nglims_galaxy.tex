@@ -1,0 +1,182 @@
+\NeedsTeXFormat{LaTeX2e}[1995/12/01]
+\documentclass[10pt]{bmc_article}
+
+\usepackage{cite} % Make references as [1-4], not [1,2,3,4]
+\usepackage{url}  % Formatting web addresses
+\usepackage{ifthen}  % Conditional
+\usepackage{multicol}   %Columns
+\usepackage[utf8]{inputenc} %unicode support
+%\usepackage[applemac]{inputenc} %applemac support if unicode package fails
+%\usepackage[latin1]{inputenc} %UNIX support if unicode package fails
+\urlstyle{rm}
+
+\def\includegraphic{}
+\def\includegraphics{}
+
+
+\setlength{\topmargin}{0.0cm}
+\setlength{\textheight}{21.5cm}
+\setlength{\oddsidemargin}{0cm}
+\setlength{\textwidth}{16.5cm}
+\setlength{\columnsep}{0.6cm}
+
+\newboolean{publ}
+
+%Review style settings
+\newenvironment{bmcformat}{\begin{raggedright}\baselineskip20pt\sloppy\setboolean{publ}{false}}{\end{raggedright}\baselineskip20pt\sloppy}
+
+%Publication style settings
+%\newenvironment{bmcformat}{\fussy\setboolean{publ}{true}}{\fussy}
+
+\begin{document}
+\begin{bmcformat}
+
+
+\title{Next generation sequencing information management and analysis
+  system for Galaxy}
+
+\author{Brad A Chapman\correspondingauthor$^{1}$%
+       \email{chapman@molbio.mgh.harvard.edu}%
+      \and
+         Mark Borowsky$^1$%
+         \email{borowsky@molbio.mgh.harvard.edu}%
+      }
+
+\address{%
+    \iid(1)Department of Molecular Biology, Simches Research Center,%
+    Massachusetts General Hospital, Boston, MA 02114, USA
+}%
+
+\maketitle
+
+\begin{abstract}
+  \paragraph*{Background:} Next generation sequencing technologies
+  like Illumina, SOLiD and 454 have provided core facilities with the
+  ability to produce large amounts of sequence data. Along with this
+  increased output comes the challenge of managing requests and
+  samples, tracking sequencing runs, and automating downstream
+  analyses.
+  \paragraph*{Results:} We approached these challenges by developing a
+  sample submission and tracking interface on top of the web-based
+  Galaxy data integration platform. On the back end, an automated
+  analysis pipeline processes data as it arrives off the sequencer,
+  uploading the results back into Galaxy.
+  \paragraph*{Conclusions:} The resulting system demonstrates the
+  utility of well run community open source analysis platforms by
+  allowing small research cores to effectively process high throughput
+  data and enabling research scientists to quickly assess experimental
+  results.
+\end{abstract}
+
+\ifthenelse{\boolean{publ}}{\begin{multicols}{2}}{}
+
+\section*{Background}
+
+Overview of Galaxy
+
+Small bioinformatics core with Illumina machine
+
+Advantages of automated backend + analysis platform
+
+\section*{Implementation}
+
+Existing sample tracking
+
+Researcher targeted user interface
+
+Automated Illumina intergration and back end processing
+
+Distribution of files for visualization and additional analysis
+
+\section*{Results and Discussion}
+
+\subsection*{Enabling research}
+
+\subsection*{Collaborative development}
+
+\subsection*{Bioinformatics core efficiency}
+
+\section*{Conclusions}
+
+\section*{Availability and requirements}
+
+\section*{Authors contributions}
+
+\section*{Acknowledgements}
+  \ifthenelse{\boolean{publ}}{\small}{}
+
+{\ifthenelse{\boolean{publ}}{\footnotesize}{\small}
+ \bibliographystyle{bmc_article}  % Style BST file
+  \bibliography{nglims_galaxy} }  % Bibliography file (usually '*.bib' )
+
+\ifthenelse{\boolean{publ}}{\end{multicols}}{}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%                               %%
+%% Figures                       %%
+%%                               %%
+%% NB: this is for captions and  %%
+%% Titles. All graphics must be  %%
+%% submitted separately and NOT  %%
+%% included in the Tex document  %%
+%%                               %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%
+%% Do not use \listoffigures as most will included as separate files
+
+\section*{Figures}
+  \subsection*{Figure 1 - Sample figure title}
+      A short description of the figure content
+      should go here.
+
+  \subsection*{Figure 2 - Sample figure title}
+      Figure legend text.
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%                               %%
+%% Tables                        %%
+%%                               %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% Use of \listoftables is discouraged.
+%%
+\section*{Tables}
+  \subsection*{Table 1 - Sample table title}
+    Here is an example of a \emph{small} table in \LaTeX\ using  
+    \verb|\tabular{...}|. This is where the description of the table 
+    should go. \par \mbox{}
+    \par
+    \mbox{
+      \begin{tabular}{|c|c|c|}
+        \hline \multicolumn{3}{|c|}{My Table}\\ \hline
+        A1 & B2  & C3 \\ \hline
+        A2 & ... & .. \\ \hline
+        A3 & ..  & .  \\ \hline
+      \end{tabular}
+      }
+  \subsection*{Table 2 - Sample table title}
+    Large tables are attached as separate files but should
+    still be described here.
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%                               %%
+%% Additional Files              %%
+%%                               %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section*{Additional Files}
+  \subsection*{Additional file 1 --- Sample additional file title}
+    Additional file descriptions text (including details of how to
+    view the file, if it is in a non-standard format or the file extension).  This might
+    refer to a multi-page table or a figure.
+
+  \subsection*{Additional file 2 --- Sample additional file title}
+    Additional file descriptions text.
+
+\end{bmcformat}
+\end{document}
