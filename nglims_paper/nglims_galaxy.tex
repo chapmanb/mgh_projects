@@ -131,19 +131,111 @@ researchers, enabling scientific work.
 
 \section*{Implementation}
 
-Existing sample tracking
+Building an automated system for processing next-generation sequencing
+data required two components. The first is a front-end web interface,
+tightly integrated with Galaxy, that provides a graphical method to
+quickly collect and manage sample data. The second is a back-end set
+of scripts which drives analysis based on sample data and reintegrates
+the results with the Galaxy front-end for researcher analysis.
 
-Researcher targeted user interface
+\subsection*{Front-end Galaxy interface}
 
-Automated Illumina integration and back end processing
+\subsubsection*{Researcher sample entry}
 
-Distribution of files for visualization and additional analysis
+Biologists use a local Galaxy server as an entry point to submit
+samples for sequencing. This provides a familiar interface and central
+location for both entering sample information and retrieving and
+analyzing the sequencing data.
+
+Practically, a user begins by browsing to the sample submission
+page. There they are presented with a wizard interface which guides
+them through entry of sample details. Multiplexed samples are
+supported through a drag and drop interface (Figure 1).
+
+When all samples are entered, the user submits them as a sequencing
+project. This includes billing information and a project name to
+facilitate communication between the researcher and the core group
+about submissions (Figure 2). Users are able to view their submissions
+grouped as projects and track the state of constructs. The interface
+allows support for additional services associated with sequencing,
+like library construction, quantitation and validation. This is a
+valuable way for users to track and organize the status of their
+samples.
+
+\subsubsection*{Sequencing tracking and management}
+
+Administrators and sequencing technicians have access to additional
+functionality to help manage the internal sample preparation and
+sequencing workflow. The main sample tracking interface centers around
+a set of queues; each queue represents a state that a sample can be
+in. Samples move through the queues as they are processed, with
+additional information being added to the sample at each step. For
+instance, a sample in the ‘Pre-sequencing quantitation’ queue moves to
+the ‘Sequencing’ queue once it has been fully quantitated, with
+quantitation information entered by the sequencing technician during
+the transition.
+
+Assigning samples to flow cells occurs using a drag and drop jQueryUI
+interface. The design is flexible to allow for placing samples across
+multiple lanes or multiplexing multiple barcoded samples into a single
+lane (Figure 3).
+
+\subsubsection*{Viewing sequencing results}
+
+Running a sequencing machine requires careful monitoring of results
+and our interface provides several ways to view this data. Raw cluster
+and read counts are linked to a list of runs. For higher level
+analyses, interactive plots are available for viewing reads over time
+and pass rates compared to read density. These allow adjustment of
+experimental procedures to maximize useful reads based on current
+machine chemistry (Figure 4).
+
+The results of processing sequencing runs -- fastq reads, alignments
+files, summary PDFs and other associated files -- are uploaded back
+into into Galaxy Data Libraries organized by sample names (Figure
+5). Users can download results for offline work, or import them
+directly into their Galaxy history for further analysis or display.
+
+\subsection*{Back-end analysis pipeline}
+
+Analysis files are produced by an automated pipeline of scripts
+written in the Python programming language. A script run hourly by a
+cron job detects runs as they come off the sequencer. Finished run
+results are processed into standard fastq files using Illumina
+utilities as the start point for specialized processing.
+
+Details about the finished run are passed on to storage and analysis
+servers using AMQP messaging. The storage server transfers files from
+the sequencing machine for long term archival and backup purposes. The
+analysis server transfers fastq files in preparation for detailed
+analyses (Figure 6).
+
+Different analysis options are available depending on the sequencing
+inputs and experimental goals. The most complete pipeline is for
+variant calling, which demonstrates the major features of the system:
+
+\begin{itemize}
+  \item De-multiplex lane results into separate samples, combining
+    samples run on multiple lanes.
+  \item Alignment with bowtie or bwa.
+  \item Generation of alignment and read statistics with Picard, the
+    fastx toolkit and SolexaQA.
+  \item Preparation of a summary PDF with detailed statistics
+    about the run and alignment.
+  \item GATK recalibration and realignment
+  \item SNP identification with GATK’s unified genotyper
+  \item Variant effect prediction with snpEff.
+\end{itemize}
+
+The pipeline is completely general and driven by open-source tools.
+Additional analysis pipelines for experimental approaches like
+ChIP-seq or RNA-seq could be integrated into this system.
 
 \section*{Results and Discussion}
 
-\subsection*{Enabling research}
-
 \subsection*{Collaborative development}
+
+\subsection*{Enabling biological research}
 
 \subsection*{Bioinformatics core efficiency}
 
@@ -162,72 +254,48 @@ Distribution of files for visualization and additional analysis
 
 \ifthenelse{\boolean{publ}}{\end{multicols}}{}
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                               %%
-%% Figures                       %%
-%%                               %%
-%% NB: this is for captions and  %%
-%% Titles. All graphics must be  %%
-%% submitted separately and NOT  %%
-%% included in the Tex document  %%
-%%                               %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%%
-%% Do not use \listoffigures as most will included as separate files
-
 \section*{Figures}
-  \subsection*{Figure 1 - Sample figure title}
-      A short description of the figure content
-      should go here.
+\subsection*{Figure 1 - Researcher sample entry}
+Entry of sequencing samples is fully integrated with Galaxy. A
+wizard interface with automated completion from previous samples
+allows quick collection of important details. A drag and drop
+interaction makes specifying multiplexed barcode details painless.
 
-  \subsection*{Figure 2 - Sample figure title}
-      Figure legend text.
+\url{http://www.youtube.com/watch?v=HGhNMeEAFV0}
 
+\subsection*{Figure 2 - Project submission and tracking}
+Related samples are submitted as a project. The interface allows
+researchers to follow the state of the samples through the
+preparation and sequencing process for full transparency.
 
+\url{http://www.youtube.com/watch?v=DtQG9IzpoCU}
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                               %%
-%% Tables                        %%
-%%                               %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection*{Figure 3 - Sample management by sequencing technicians}
+Technicians doing the sequencing work move samples through multiple
+queue states, tracking important sample details. Sequencing samples
+are placed on flowcells using a drag-drop interface.
 
-%% Use of \listoftables is discouraged.
-%%
-\section*{Tables}
-  \subsection*{Table 1 - Sample table title}
-    Here is an example of a \emph{small} table in \LaTeX\ using  
-    \verb|\tabular{...}|. This is where the description of the table 
-    should go. \par \mbox{}
-    \par
-    \mbox{
-      \begin{tabular}{|c|c|c|}
-        \hline \multicolumn{3}{|c|}{My Table}\\ \hline
-        A1 & B2  & C3 \\ \hline
-        A2 & ... & .. \\ \hline
-        A3 & ..  & .  \\ \hline
-      \end{tabular}
-      }
-  \subsection*{Table 2 - Sample table title}
-    Large tables are attached as separate files but should
-    still be described here.
+\url{http://www.youtube.com/watch?v=Sjt6y1lbzVI}
 
+\subsection*{Figure 4 - Sequencing results}
+Important statistics about sequencing runs are available to
+researchers and sequencing technicians. Interactive plots enable
+assessment of results over time.
 
+\url{http://www.youtube.com/watch?v=4xrtPXE7Oe8}
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                               %%
-%% Additional Files              %%
-%%                               %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection*{Figure 5 - Sequencing data and analysis results}
+Results are readily available to users in Galaxy data libraries. This
+allows easy import into Galaxy history for analysis and visualization.
 
-\section*{Additional Files}
-  \subsection*{Additional file 1 --- Sample additional file title}
-    Additional file descriptions text (including details of how to
-    view the file, if it is in a non-standard format or the file extension).  This might
-    refer to a multi-page table or a figure.
+TODO: Make a video for this to show importing results into
+history.
+\url{http://bcbio.files.wordpress.com/2011/01/data_library_results.png}
 
-  \subsection*{Additional file 2 --- Sample additional file title}
-    Additional file descriptions text.
+\subsection*{Figure 6 - Back end analysis architecture}
+Location of detection, storage and analysis servers running in the
+back-end pipeline.
 
+TODO: Figure of overall system + Galaxy
 \end{bmcformat}
 \end{document}
