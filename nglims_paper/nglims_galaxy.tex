@@ -62,9 +62,9 @@
   analysis pipeline processes data as it arrives off the sequencer,
   uploading the results back into Galaxy.
   \paragraph*{Conclusions:} The resulting system demonstrates the
-  utility of well run community open source analysis platforms by
-  allowing small research cores to effectively process high throughput
-  data and enabling research scientists to quickly assess experimental
+  utility of well run community open source analysis platforms.
+  It allows small research cores to effectively process high throughput
+  data, thus enabling research scientists to quickly assess experimental
   results.
 \end{abstract}
 
@@ -72,11 +72,62 @@
 
 \section*{Background}
 
-Overview of Galaxy
+The proliferation of next-generation sequencing machines opens up
+large scale sequencing to a multitude of new users. Among these are
+Bioinformatics core facilities and individual labs, who require
+flexible interfaces for entering samples, tracking sequencing,
+processing output files and analyzing the resulting data. These
+challenges require computational developers to provide data for
+biological users in a format that can be readily queried and
+visualized.
 
-Small bioinformatics core with Illumina machine
+The Galaxy data integration platform \cite{goecks_galaxy:_2010}
+helps ameliorate the challenge of data management for biologists
+by providing web-based analysis tools aimed at biological
+researchers. By replicating and expanding the tools a computational
+user would have available at a UNIX commandline, biologists can
+visualize and process the large amount of data produced by next
+generation sequencing platforms. For instance, large multiple gigabyte
+alignment files from multiple experiments can be viewed directly
+in the UCSC genome browser \cite{fujita_ucsc_2011} from Galaxy,
+allowing biologists to immediately view their sequencing data
+and assess experimental success. In combination with the analysis
+tools and visualization options, Galaxy enables reproducible research
+and collaboration between computational scientists and non-programmers by
+incorporating multi-tool workflows and sharing of computational
+results.
 
-Advantages of automated backend + analysis platform
+A number of bioinformatics tools have emerged to help with handling
+high throughput sequencing data. Sequence alignment programs such as
+Bowtie \cite{langmead_ultrafast_2009} and BWA \cite{li_fast_2009}
+handle finding read locations within sequenced genomes. Toolkits such
+as samtools \cite{li_sequence_2009} and Picard \cite{_picard_????}
+allow manipulation and querying of resulting alignment files. Larger
+tool suites such as the Genome Analysis Toolkit
+\cite{mckenna_genome_2010} work with aligned data to characterize
+genetic variation.
+
+A common theme of all these toolkits is a requirement for developing
+automated workflows to drive them. For instance, a variant calling
+pipeline starting from sequencing data requires more than a dozen
+individual programs. These automation requirements are becoming
+even more clear with the increase in multiplexed sequencing samples,
+which require deconvolution of barcodes prior to starting an analysis
+workflow.
+
+The solution to these challenges is capturing experimental data,
+including barcodes and run data, in a structured format. Moving from
+Excel spreadsheet and lab notebook tracking to this structured
+platform allows development of the necessary automation, providing
+data to researchers in a timely organized manner. By embedding the
+results within the existing Galaxy toolkit, results are immediately
+available for analysis by biologists.
+
+Here we describe our fully integration solution that tackles these
+issues and takes full advantage of existing software and
+infrastructure. The resulting tools effectively improve the
+challenging interactions between computational and laboratory
+researchers, enabling scientific work.
 
 \section*{Implementation}
 
@@ -84,7 +135,7 @@ Existing sample tracking
 
 Researcher targeted user interface
 
-Automated Illumina intergration and back end processing
+Automated Illumina integration and back end processing
 
 Distribution of files for visualization and additional analysis
 
