@@ -216,36 +216,122 @@ variant calling, which demonstrates the major features of the system:
 
 \begin{itemize}
   \item De-multiplex lane results into separate samples, combining
-    samples run on multiple lanes.
-  \item Alignment with bowtie or bwa.
+    samples run on multiple lanes \cite{cock_biopython:_2009}.
+  \item Alignment with Bowtie or BWA
+    \cite{langmead_ultrafast_2009,li_fast_2009}.
   \item Generation of alignment and read statistics with Picard, the
-    fastx toolkit and SolexaQA.
+    FASTX-toolkit and SolexaQA
+    \cite{_picard_????,_fastx-toolkit_????,cox_solexaqa:_2010}.
   \item Preparation of a summary PDF with detailed statistics
     about the run and alignment.
-  \item GATK recalibration and realignment
-  \item SNP identification with GATK’s unified genotyper
-  \item Variant effect prediction with snpEff.
+  \item Recalibration and realignment using the Genome Analysis
+    Toolkit
+    \cite{mckenna_genome_2010,_pysam_????,gautier_intuitive_2010}.
+  \item Variant identification with Unified Genotyper from the Genome
+    Analysis Toolkit.
+  \item Variant effect prediction using snpEff \cite{_snpeff_????}.
 \end{itemize}
 
 The pipeline is completely general and driven by open-source tools.
 Additional analysis pipelines for experimental approaches like
-ChIP-seq or RNA-seq could be integrated into this system.
+ChIP-seq or RNA-seq could be readily integrated.
 
 \section*{Results and Discussion}
 
 \subsection*{Collaborative development}
 
+A unique aspect of this project is that it was undertaken
+independently by the Bioinformatics core at Massachusetts General
+Hospital, with the front-end code being subsequently integrated
+into the main Galaxy codebase. This was made possible because of the
+strong software development ethos at Galaxy. It is a well organized,
+open-source project whose development directions and goals are fully
+transparent to the greater programming community.
+
+We hope this type of community code development will become
+increasingly common. With the continuing onslaught of next-generation
+sequencing data, computational biologists will managing and analyzing
+large volumes of experimental data coming out of laboratories. One
+productive way to meet this challenge is to better train ourselves to
+build off existing frameworks, utilize open-source tools, and make our
+code more interoperable.
+
+This work would certainly not have been possible for a developer in a
+small core lab without the backbone of functionality provided by
+Galaxy.
+
 \subsection*{Enabling biological research}
+
+The largest beneficiary of this work has been the biological
+researchers within our department. By establishing a structured intake
+system and automated analysis pipeline, retrieving initial results
+does not require manual work by bioinformaticians. As a result
+the time to expect an analysis of a next-generation sequencing run has
+fallen to only the computational time required for the alignments and
+post-processing.
+
+We find it an extremely positive development to get e-mails from
+biologists hours after a run is done wondering when they can have
+their data in Galaxy. The move from a model where processing would
+require manual intervention opens up entirely new classes of
+experiments and accelerates the time between designing an experiment
+and determining whether the data fits the expected hypotheses.
 
 \subsection*{Bioinformatics core efficiency}
 
+A secondary benefit of the automated approach is freeing
+bioinformatics core groups from the day-to-day management of
+sequencing data. It is easy for a small group to have to move into
+firefighting mode as data production overwhelms the ability to
+analyze it. With researchers handling data entry and automated systems
+taking care of initial processing tasks, computational biologists are
+freed to focus on algorithm development, higher level analyses and
+specific visualizations. This transformation allows computational team
+members to explore more intricate analysis approaches, and overall
+makes a core team able to more effectively contribute to research
+output.
+
 \section*{Conclusions}
+
+We describe a web based laboratory information system for
+next-generation sequencing data. By developing the entry and
+management forms inside of Galaxy, researchers get advanced analysis
+tools along with sequencing data and analysis results. The structured
+data collection of sample and sequencing information allowed the
+development of an automated back end system which moves results from
+the sequencers through specialized analysis pipelines. The resulting
+infrastructure has fundamentally improved our ability to collaborate
+with laboratory researchers.
+
+This functionality was uniquely developed by an informal collaboration
+between a remote bioinformatics core group and the Galaxy development
+team. By combining several open-source toolkits and algorithms, the
+resulting system can be readily adopted by other facilities. The
+flexibility and maintainability of the code base is designed to make
+extending and using this software a joy.
 
 \section*{Availability and requirements}
 
+The front-end entry system is available as part of Galaxy; see
+\url{http://getgalaxy.org} for installation details and
+\url{https://bitbucket.org/galaxy/galaxy-central/wiki/LIMS/nglims} for
+instructions on configuration and activation.
+
+The back-end analysis pipeline is available from our GitHub repository
+(\url{https://github.com/chapmanb/bcbb/tree/master/nextgen}) along
+with installation instructions.
+
+Both are made freely available for both academic and commercial use
+under the permissive MIT license.
+
 \section*{Authors contributions}
 
+BAC conceived and wrote the software. XXX and XXX implemented crucial
+Galaxy components and helped with integration. MB oversaw the software
+development and XXX oversaw Galaxy development.
+
 \section*{Acknowledgements}
+
   \ifthenelse{\boolean{publ}}{\small}{}
 
 {\ifthenelse{\boolean{publ}}{\footnotesize}{\small}
