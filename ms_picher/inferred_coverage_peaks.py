@@ -14,19 +14,29 @@ import os
 import sys
 import csv
 import subprocess
+import collections
 
 import yaml
 import pysam
+from bx.intervals.intersection import IntervalTree
+from bx.seq.twobit import TwoBitFile
+from Bio.Blast.Applications import NcbiblastnCommandline
+from Bio.Blast import NCBIXML
 
 from bcbio.picard import PicardRunner
+from bcbio.picard.utils import chdir
 
 def main(config_file):
     with open(config_file) as in_handle:
         config = yaml.load(in_handle)
+    tmp_dir = config["tmp_dir"]
+    if not os.path.exists(tmp_dir):
+        os.makedirs(tmp_dir)
     align_dir = config["align_dir"]
     if not os.path.exists(align_dir):
         os.makedirs(align_dir)
     picard = PicardRunner(config["program"]["picard"])
+    xreact_bases = config["algorithm"]["cross_react_bases"]
     for ref in config["ref"]:
         bed_files = {}
         for cur_fastq in config["fastq"]:
@@ -40,12 +50,158 @@ def main(config_file):
             inferred_bed = generate_inferred_coverage(bam_file)
             generate_bigwig(inferred_bed, ref, picard)
         peaks = []
+        oligos = []
         for peak in config["peaks"]:
             peaks.append(call_macs_peaks(bed_files[peak["condition"]],
                                          bed_files[peak["background"]],
                                          peak["condition"], ref,
                                          config["peak_dir"]))
-        print peaks
+            oligos.append(peak["oligos"])
+        peak_screen = (PeakCrossReactScreener(ref, xreact_bases, tmp_dir)
+                       if xreact_bases > 0 else None)
+        output_combine_peaks(peaks, oligos, peak_screen,
+                             config["algorithm"]["overlap_percent"])
+
+# ## Combine peaks from all experiments
+# Read peaks from a MACS style BED file for all experiments and
+# generate an output file with only peaks that overlap from all experiments.
+# This results in a smaller set of final peaks for easier interpretation.
+
+class PeakOverlapper:
+    """Keep tally of peaks in base intervals that overlap with comparisons.
+    """
+    def __init__(self, compares, chrom, overlap_percent, peak_screener,
+                 oligos):
+        """Initialize with a list of IntervalTrees for comparison.
+        """
+        self._compares = compares
+        self._pct = overlap_percent
+        self._chrom = chrom
+        self._screener = peak_screener
+        self._oligos = oligos
+        self.final = []
+
+    def check_region(self, node):
+        cmp_bases = set(range(node.start, node.end))
+        count = 0
+        for cmptree in self._compares:
+            overlaps = cmptree.find(node.start, node.end)
+            for ol in overlaps:
+                if self._current_overlap(ol, cmp_bases) >= self._pct:
+                    count += 1
+                    break
+        if count == len(self._compares):
+            if (self._screener is None or
+                self._screener.check(self._chrom, node.start, node.end, self._oligos)):
+                self.final.append((node.start, node.end))
+
+    def _current_overlap(self, ol, cmp_bases):
+        ol_bases = set(range(ol['start'], ol['end']))
+        return len(ol_bases & cmp_bases) / float(len(cmp_bases))
+
+def _combine_peaks(peak_files, oligos, peak_screener, overlap_percent):
+    """Retrieve only peaks that overlap in all three experiments.
+    """
+    itrees = [_bed_to_intervaltree(f) for f in peak_files]
+    for chrom, base_itree in itrees[0].iteritems():
+        overlapper = PeakOverlapper([t[chrom] for t in itrees[1:]], chrom,
+                                    overlap_percent, peak_screener, oligos[0])
+        base_itree.traverse(overlapper.check_region)
+        for start, end in overlapper.final:
+            yield chrom, start, end
+
+def output_combine_peaks(peak_files, oligos, peak_screener, overlap_percent):
+    out_file = "%s-combined%s" % os.path.splitext(peak_files[0])
+    if not os.path.exists(out_file):
+        with open(out_file, "w") as out_handle:
+            writer = csv.writer(out_handle, dialect="excel-tab")
+            for chrom, start, end in _combine_peaks(peak_files, oligos,
+                                                    peak_screener, overlap_percent):
+                writer.writerow([chrom, start, end])
+
+def _bed_to_intervaltree(bed_file):
+    itree = collections.defaultdict(IntervalTree)
+    with open(bed_file) as in_handle:
+        reader = csv.reader(in_handle, dialect="excel-tab")
+        for chrom, start, end in ((l[0], int(l[1]), int(l[2])) for l in reader):
+            itree[chrom].insert(start, end, dict(start=start, end=end))
+    return itree
+
+# ## Remove peak regions where DNA sequence matches binding oligos
+# A potential source of pull down noise are DNA segments that overlap with
+# the oligos used in the pull down experiment. This detects and removes these
+# regions to yield a set of clean peaks for overlap experiments.
+
+class PeakCrossReactScreener:
+    def __init__(self, ref, xreact_bases, tmp_dir):
+        self._2bit = self._get_twobit(ref)
+        self._xreact = xreact_bases
+        self._tmpdir = tmp_dir
+
+    def _get_twobit(self, ref):
+        """Retrieve bx-python 2bit class from /reference hierarchy.
+        """
+        fname = os.path.join(os.path.dirname(ref), os.pardir, "ucsc",
+                             "%s.2bit" % os.path.basename(ref))
+        return TwoBitFile(open(fname))
+
+    def check(self, chrom, start, end, oligos):
+        seq = self._2bit[chrom].get(start, end)
+        blast_db = self._make_blastdb(seq)
+        input_file = self._make_input_file(oligos)
+        blast_out = os.path.join(self._tmpdir, "out.blast")
+        cl = NcbiblastnCommandline(query=input_file, db=blast_db,
+                                   out=blast_out, outfmt=5, num_alignments=10,
+                                   task="blastn-short")
+        subprocess.check_call(str(cl).split())
+        with open(blast_out) as blast_handle:
+            for rec in NCBIXML.parse(blast_handle):
+                for align in rec.alignments:
+                    for hsp in align.hsps:
+                        if hsp.identities >= self._xreact:
+                            return False
+        return True
+
+    def _make_input_file(self, oligos):
+        out_file = os.path.join(self._tmpdir, "in.fa")
+        with open(out_file, "w") as out_handle:
+            for i, oligo in enumerate(oligos):
+                out_handle.write(">o%s\n%s\n" % (i, oligo))
+        return out_file
+
+    def _make_blastdb(self, seq):
+        out_file = "ref.fa"
+        with chdir(self._tmpdir):
+            with open(out_file, "w") as out_handle:
+                out_handle.write(">ref\n%s\n" % seq.upper())
+            cl = ["makeblastdb", "-in", out_file, "-dbtype", "nucl",
+                  "-out", out_file]
+            with open("/dev/null", "w") as stdout:
+                subprocess.check_call(cl, stdout=stdout)
+        return os.path.join(self._tmpdir, out_file)
+
+# ## Generate inferred coverage BED file
+
+def generate_inferred_coverage(bam_file):
+    """Create an inferred coverage BED file from paired end regions.
+    """
+    bed_file = "%s-inferred.bed" % os.path.splitext(bam_file)[0]
+    if not os.path.exists(bed_file):
+        with open(bed_file, "w") as out_handle:
+            writer = csv.writer(out_handle, dialect="excel-tab")
+            samfile = pysam.Samfile(bam_file, "rb")
+            for read in samfile.fetch():
+                if (read.is_paired and read.is_read1 and not read.is_unmapped
+                    and not read.mate_is_unmapped and read.rname == read.mrnm):
+                    chrom = samfile.getrname(read.rname)
+                    pos = [read.pos, read.pos + read.rlen, read.mpos,
+                           read.mpos + read.rlen]
+                    writer.writerow([chrom, min(pos), max(pos), read.qname])
+    return bed_file
+
+# ## Run external programs
+# These functions drive various external programs (bowtie, MACS) and handle
+# format conversions.
 
 def call_macs_peaks(exp_bed, back_bed, out_base, ref, peak_dir):
     if not os.path.exists(peak_dir):
@@ -53,10 +209,12 @@ def call_macs_peaks(exp_bed, back_bed, out_base, ref, peak_dir):
     genome_size = _size_from_fai(_get_ref_fai(ref))
     out_name = os.path.join(peak_dir,
                             "%s-%s-macs" % (out_base, os.path.basename(ref)))
-    cl = ["macs14", "-t", exp_bed, "-c", back_bed, "--name=%s" % out_name,
-          "--format=BED", "--gsize=%s" % genome_size]
-    subprocess.check_call(cl)
-    return out_name
+    peak_file = "%s_peaks.bed" % out_name
+    if not os.path.exists(peak_file):
+        cl = ["macs14", "-t", exp_bed, "-c", back_bed, "--name=%s" % out_name,
+              "--format=BED", "--gsize=%s" % genome_size]
+        subprocess.check_call(cl)
+    return peak_file
 
 def generate_bigwig(bed_file, ref, picard):
     genome_ref = _get_ref_fai(ref)
@@ -80,23 +238,6 @@ def _size_from_fai(index_file):
 def _get_ref_fai(ref):
     base_dir, name = os.path.split(ref)
     return os.path.join(base_dir, os.pardir, "seq", "%s.fa.fai" % name)
-
-def generate_inferred_coverage(bam_file):
-    """Create an inferred coverage BED file from paired end regions.
-    """
-    bed_file = "%s-inferred.bed" % os.path.splitext(bam_file)[0]
-    if not os.path.exists(bed_file):
-        with open(bed_file, "w") as out_handle:
-            writer = csv.writer(out_handle, dialect="excel-tab")
-            samfile = pysam.Samfile(bam_file, "rb")
-            for read in samfile.fetch():
-                if (read.is_paired and read.is_read1 and not read.is_unmapped
-                    and not read.mate_is_unmapped and read.rname == read.mrnm):
-                    chrom = samfile.getrname(read.rname)
-                    pos = [read.pos, read.pos + read.rlen, read.mpos,
-                           read.mpos + read.rlen]
-                    writer.writerow([chrom, min(pos), max(pos), read.qname])
-    return bed_file
 
 def bam_to_bed(bam_file):
     bed_file = "%s.bed" % os.path.splitext(bam_file)[0]
