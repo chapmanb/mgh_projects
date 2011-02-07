@@ -151,16 +151,23 @@ class PeakCrossReactScreener:
         input_file = self._make_input_file(oligos)
         blast_out = os.path.join(self._tmpdir, "out.blast")
         cl = NcbiblastnCommandline(query=input_file, db=blast_db,
-                                   out=blast_out, outfmt=5, num_alignments=10,
-                                   task="blastn-short")
+                                   out=blast_out, outfmt=5, num_alignments=1,
+                                   num_descriptions=0, task="blastn-short")
         subprocess.check_call(str(cl).split())
         with open(blast_out) as blast_handle:
             for rec in NCBIXML.parse(blast_handle):
-                for align in rec.alignments:
-                    for hsp in align.hsps:
-                        if hsp.identities >= self._xreact:
-                            return False
+                if self._has_oligo_match(rec):
+                    return False
         return True
+
+    def _has_oligo_match(self, rec):
+        """Determine if the BLAST record indicates matches to an input oligo.
+        """
+        for align in rec.alignments:
+            for hsp in align.hsps:
+                if hsp.identities >= self._xreact:
+                    return True
+        return False
 
     def _make_input_file(self, oligos):
         out_file = os.path.join(self._tmpdir, "in.fa")
