@@ -26,17 +26,23 @@ from Bio.Blast import NCBIXML
 from bcbio.picard import PicardRunner
 from bcbio.picard.utils import chdir
 
+# ## High level functions to drive process
+
 def main(config_file):
     with open(config_file) as in_handle:
         config = yaml.load(in_handle)
-    tmp_dir = config["tmp_dir"]
-    if not os.path.exists(tmp_dir):
-        os.makedirs(tmp_dir)
+    if config.get("align_dir", None) is not None:
+        align_and_call(config, config_file)
+    else:
+        call_from_alignments(config)
+
+def align_and_call(config, config_file):
+    """Do peak calls and alignments, starting with fastq files.
+    """
+    picard = PicardRunner(config["program"]["picard"])
     align_dir = config["align_dir"]
     if not os.path.exists(align_dir):
         os.makedirs(align_dir)
-    picard = PicardRunner(config["program"]["picard"])
-    xreact_bases = config["algorithm"]["cross_react_bases"]
     for ref in config["ref"]:
         bed_files = {}
         for cur_fastq in config["fastq"]:
@@ -49,18 +55,41 @@ def main(config_file):
             bed_files[cur_fastq["name"]] = bam_to_bed(bam_file)
             inferred_bed = generate_inferred_coverage(bam_file)
             generate_bigwig(inferred_bed, ref, picard)
-        peaks = []
-        oligos = []
-        for peak in config["peaks"]:
-            peaks.append(call_macs_peaks(bed_files[peak["condition"]],
-                                         bed_files[peak["background"]],
-                                         peak["condition"], ref,
-                                         config["peak_dir"]))
-            oligos.append(peak["oligos"])
-        peak_screen = (PeakCrossReactScreener(ref, xreact_bases, tmp_dir)
-                       if xreact_bases > 0 else None)
-        output_combine_peaks(peaks, oligos, peak_screen,
-                             config["algorithm"]["overlap_percent"])
+        call_peaks(bed_files, ref, config)
+
+def call_from_alignments(config):
+    """Do peak calls, starting with alignment files.
+    """
+    bed_files = {}
+    for align in config["alignments"]:
+        bed_files[align["name"]] = bam_to_bed(align["file"])
+    for ref in config["ref"]:
+        call_peaks(bed_files, ref, config)
+
+def call_peaks(bed_files, ref, config):
+    """Top level peak calling functionality.
+    """
+    tmp_dir = config["tmp_dir"]
+    if not os.path.exists(tmp_dir):
+        os.makedirs(tmp_dir)
+    xreact_bases = config["algorithm"]["cross_react_bases"]
+    min_width = config["algorithm"].get("min_width", 0)
+    peaks = []
+    oligos = []
+    for peak in config["peaks"]:
+        peaks.append(call_macs_peaks(bed_files[peak["condition"]],
+                                     bed_files[peak["background"]],
+                                     peak["condition"], ref,
+                                     config["peak_dir"]))
+        oligos.append(peak["oligos"])
+    peak_screen = (PeakCrossReactScreener(ref, xreact_bases, min_width, tmp_dir)
+                   if xreact_bases > 0 else None)
+    ol_percent = config["algorithm"].get("overlap_percent", None)
+    if ol_percent:
+        output_combine_peaks(peaks, oligos, peak_screen, ol_percent)
+    else:
+        for i, peak in enumerate(peaks):
+            filter_peaks(peak, oligos[i], peak_screen)
 
 # ## Combine peaks from all experiments
 # Read peaks from a MACS style BED file for all experiments and
@@ -119,6 +148,21 @@ def output_combine_peaks(peak_files, oligos, peak_screener, overlap_percent):
                                                     peak_screener, overlap_percent):
                 writer.writerow([chrom, start, end])
 
+def filter_peaks(peak_file, oligos, peak_screener):
+    out_file = "%s-filter%s" % os.path.splitext(peak_file)
+    if not os.path.exists(out_file):
+        with open(peak_file) as in_handle:
+            with open(out_file, "w") as out_handle:
+                writer = csv.writer(out_handle, dialect="excel-tab")
+                for chrom, start, end in _read_bed(in_handle):
+                    if peak_screener.check(chrom, start, end, oligos):
+                        writer.writerow([chrom, start, end])
+
+def _read_bed(in_handle):
+    reader = csv.reader(in_handle, dialect="excel-tab")
+    for chrom, start, end in ((l[0], int(l[1]), int(l[2])) for l in reader):
+        yield chrom, start, end
+
 def _bed_to_intervaltree(bed_file):
     itree = collections.defaultdict(IntervalTree)
     with open(bed_file) as in_handle:
@@ -133,9 +177,10 @@ def _bed_to_intervaltree(bed_file):
 # regions to yield a set of clean peaks for overlap experiments.
 
 class PeakCrossReactScreener:
-    def __init__(self, ref, xreact_bases, tmp_dir):
+    def __init__(self, ref, xreact_bases, min_width, tmp_dir):
         self._2bit = self._get_twobit(ref)
         self._xreact = xreact_bases
+        self._min_width = min_width
         self._tmpdir = tmp_dir
 
     def _get_twobit(self, ref):
@@ -146,6 +191,10 @@ class PeakCrossReactScreener:
         return TwoBitFile(open(fname))
 
     def check(self, chrom, start, end, oligos):
+        # check for too small regions
+        if self._min_width and end-start < self._min_width:
+            return False
+        # check for regions containing oligo matches
         seq = self._2bit[chrom].get(start, end)
         blast_db = self._make_blastdb(seq)
         input_file = self._make_input_file(oligos)
@@ -214,8 +263,8 @@ def call_macs_peaks(exp_bed, back_bed, out_base, ref, peak_dir):
     if not os.path.exists(peak_dir):
         os.makedirs(peak_dir)
     genome_size = _size_from_fai(_get_ref_fai(ref))
-    out_name = os.path.join(peak_dir,
-                            "%s-%s-macs" % (out_base, os.path.basename(ref)))
+    out_name = os.path.join(peak_dir, "%s-%s-macs" %
+                            (out_base.replace(" ", "_"), os.path.basename(ref)))
     peak_file = "%s_peaks.bed" % out_name
     if not os.path.exists(peak_file):
         cl = ["macs14", "-t", exp_bed, "-c", back_bed, "--name=%s" % out_name,
