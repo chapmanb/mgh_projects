@@ -15,6 +15,7 @@ import sys
 import csv
 import subprocess
 import collections
+import contextlib
 
 import yaml
 import pysam
@@ -72,24 +73,27 @@ def call_peaks(bed_files, ref, config):
     tmp_dir = config["tmp_dir"]
     if not os.path.exists(tmp_dir):
         os.makedirs(tmp_dir)
-    xreact_bases = config["algorithm"]["cross_react_bases"]
+    xreact_bases = config["algorithm"].get("cross_react_bases", 0)
     min_width = config["algorithm"].get("min_width", 0)
+    min_height = config["algorithm"].get("min_height", 0)
+    min_count = config["algorithm"].get("min_count", 0)
+    quick = config["algorithm"].get("output", "bed") == "bed"
     peaks = []
     oligos = []
     for peak in config["peaks"]:
         peaks.append(call_macs_peaks(bed_files[peak["condition"]],
                                      bed_files[peak["background"]],
                                      peak["condition"], ref,
-                                     config["peak_dir"]))
+                                     config))
         oligos.append(peak["oligos"])
-    peak_screen = (PeakCrossReactScreener(ref, xreact_bases, min_width, tmp_dir)
-                   if xreact_bases > 0 else None)
+    peak_screen = PeakCrossReactScreener(ref, xreact_bases, min_width, min_height,
+                                         min_count, quick, tmp_dir)
     ol_percent = config["algorithm"].get("overlap_percent", None)
     if ol_percent:
-        output_combine_peaks(peaks, oligos, peak_screen, ol_percent)
+        output_combine_peaks(peaks, oligos, peak_screen, ol_percent, config)
     else:
         for i, peak in enumerate(peaks):
-            filter_peaks(peak, oligos[i], peak_screen)
+            filter_peaks(peak, oligos[i], peak_screen, config)
 
 # ## Combine peaks from all experiments
 # Read peaks from a MACS style BED file for all experiments and
@@ -120,9 +124,9 @@ class PeakOverlapper:
                     count += 1
                     break
         if count == len(self._compares):
-            if (self._screener is None or
-                self._screener.check(self._chrom, node.start, node.end, self._oligos)):
-                self.final.append((node.start, node.end))
+            screen_peak = self._screener.check(node.interval, self._oligos)
+            if screen_peak:
+                self.final.append(screen_peak)
 
     def _current_overlap(self, ol, cmp_bases):
         ol_bases = set(range(ol['start'], ol['end']))
@@ -131,44 +135,103 @@ class PeakOverlapper:
 def _combine_peaks(peak_files, oligos, peak_screener, overlap_percent):
     """Retrieve only peaks that overlap in all three experiments.
     """
-    itrees = [_bed_to_intervaltree(f) for f in peak_files]
+    itrees = [_peaks_to_intervaltree(f) for f in peak_files]
     for chrom, base_itree in itrees[0].iteritems():
         overlapper = PeakOverlapper([t[chrom] for t in itrees[1:]], chrom,
                                     overlap_percent, peak_screener, oligos[0])
         base_itree.traverse(overlapper.check_region)
-        for start, end in overlapper.final:
-            yield chrom, start, end
+        for peak in overlapper.final:
+            yield peak
 
-def output_combine_peaks(peak_files, oligos, peak_screener, overlap_percent):
-    out_file = "%s-combined%s" % os.path.splitext(peak_files[0])
-    if not os.path.exists(out_file):
-        with open(out_file, "w") as out_handle:
-            writer = csv.writer(out_handle, dialect="excel-tab")
-            for chrom, start, end in _combine_peaks(peak_files, oligos,
-                                                    peak_screener, overlap_percent):
-                writer.writerow([chrom, start, end])
+def output_combine_peaks(peak_files, oligos, peak_screener, overlap_percent,
+                         config):
+    with peak_writer_prep(peak_files[0], config, "combined") as write_peak:
+        if write_peak:
+            for peak in _combine_peaks(peak_files, oligos,
+                                       peak_screener, overlap_percent):
+                write_peak(peak)
 
-def filter_peaks(peak_file, oligos, peak_screener):
-    out_file = "%s-filter%s" % os.path.splitext(peak_file)
+def filter_peaks(peak_file, oligos, peak_screener, config):
+    with peak_writer_prep(peak_file, config, "filter") as write_peak:
+        if write_peak:
+            for peak in _read_macs_out(peak_file):
+                screen_peak = peak_screener.check(peak, oligos)
+                if screen_peak:
+                    write_peak(screen_peak)
+
+@contextlib.contextmanager
+def peak_writer_prep(peak_file, config, suffix):
+    """Handle writing out peak information in multiple formats.
+
+    Supports 'bed' and 'detailed'
+    'detailed' is an extended tab delimited format with additional stats.
+    """
+    out_type = config["algorithm"].get("output", "bed")
+    if out_type == "bed":
+        header = None
+        ext = "bed"
+    elif out_type == "detailed":
+        header = ["chrom", "start", "end", "width", "count", "blastoligo"]
+        ext = "tsv"
+    else:
+        raise NotImplementedError(out_type)
+    out_file = "%s-%s.%s" % (os.path.splitext(peak_file)[0], suffix, ext)
     if not os.path.exists(out_file):
-        with open(peak_file) as in_handle:
-            with open(out_file, "w") as out_handle:
-                writer = csv.writer(out_handle, dialect="excel-tab")
-                for chrom, start, end in _read_bed(in_handle):
-                    if peak_screener.check(chrom, start, end, oligos):
-                        writer.writerow([chrom, start, end])
+        out_handle = open(out_file, "w")
+        writer = csv.writer(out_handle, dialect="excel-tab")
+        if header:
+            writer.writerow(header)
+        def _write_peak(peak):
+            if out_type == "bed":
+                writer.writerow([peak["chrom"], peak["start"], peak["end"]])
+            elif out_type == "detailed":
+                writer.writerow([peak[h] for h in header])
+        yield _write_peak
+        out_handle.close()
+    else:
+        yield None
+
+def _read_macs_out(peak_file):
+    if peak_file.endswith("_peaks.xls"):
+        fn = _read_macs_xls
+    elif peak_file.endswith("subpeaks.bed"):
+        fn = _read_macs_subpeaks
+    with open(peak_file) as in_handle:
+        for p in fn(in_handle):
+            yield p
+
+def _read_macs_subpeaks(in_handle):
+    """Read peak details from a subpeaks MACS file.
+    """
+    reader = csv.reader(in_handle, dialect="excel-tab")
+    reader.next() # header
+    for chrom, start, end, height, _ in reader:
+        width = int(end) - int(start)
+        yield dict(chrom=chrom, start=int(start), end=int(end), width=width,
+                   height=int(height))
+
+def _read_macs_xls(in_handle):
+    """Read information from a MACS xls output file.
+    """
+    # read off header
+    for line in in_handle:
+        if line.strip() and not line.startswith("#"):
+            break
+    # read the file
+    reader = csv.reader(in_handle, dialect="excel-tab")
+    for chrom, start, end, width, _, count, score in (l[:7] for l in reader):
+        yield dict(chrom=chrom, start=int(start), end=int(end), width=int(width),
+                   count=int(count), score=float(score))
 
 def _read_bed(in_handle):
     reader = csv.reader(in_handle, dialect="excel-tab")
     for chrom, start, end in ((l[0], int(l[1]), int(l[2])) for l in reader):
-        yield chrom, start, end
+        yield dict(chrom=chrom, start=start, end=end)
 
-def _bed_to_intervaltree(bed_file):
+def _peaks_to_intervaltree(peak_file):
     itree = collections.defaultdict(IntervalTree)
-    with open(bed_file) as in_handle:
-        reader = csv.reader(in_handle, dialect="excel-tab")
-        for chrom, start, end in ((l[0], int(l[1]), int(l[2])) for l in reader):
-            itree[chrom].insert(start, end, dict(start=start, end=end))
+    for peak in _read_macs_out(peak_file):
+        itree[peak["chrom"]].insert(peak["start"], peak["end"], peak)
     return itree
 
 # ## Remove peak regions where DNA sequence matches binding oligos
@@ -177,11 +240,18 @@ def _bed_to_intervaltree(bed_file):
 # regions to yield a set of clean peaks for overlap experiments.
 
 class PeakCrossReactScreener:
-    def __init__(self, ref, xreact_bases, min_width, tmp_dir):
+    def __init__(self, ref, xreact_bases, min_width, min_height,
+                 min_count, quick_screen, tmp_dir):
         self._2bit = self._get_twobit(ref)
         self._xreact = xreact_bases
         self._min_width = min_width
+        self._min_height = min_height
+        self._min_count = min_count
+        self._quick = quick_screen
         self._tmpdir = tmp_dir
+
+        print "Screening with %s oligo, %s width, %s height, %s count; quick %s" % \
+              (xreact_bases, min_width, min_height, min_count, quick_screen)
 
     def _get_twobit(self, ref):
         """Retrieve bx-python 2bit class from /reference hierarchy.
@@ -190,12 +260,14 @@ class PeakCrossReactScreener:
                              "%s.2bit" % os.path.basename(ref))
         return TwoBitFile(open(fname))
 
-    def check(self, chrom, start, end, oligos):
-        # check for too small regions
-        if self._min_width and end-start < self._min_width:
-            return False
+    def check(self, peak, oligos):
+        # shortcut the BLAST step if we can screen without it
+        if self._quick:
+            peak["blastoligo"] = 0
+            if self._screen_this(peak):
+                return None
         # check for regions containing oligo matches
-        seq = self._2bit[chrom].get(start, end)
+        seq = self._2bit[peak["chrom"]].get(peak["start"], peak["end"])
         blast_db = self._make_blastdb(seq)
         input_file = self._make_input_file(oligos)
         blast_out = os.path.join(self._tmpdir, "out.blast")
@@ -203,19 +275,32 @@ class PeakCrossReactScreener:
                                    out=blast_out, outfmt=5, num_alignments=1,
                                    num_descriptions=0, task="blastn-short")
         subprocess.check_call(str(cl).split())
+        peak["blastoligo"] = self._max_identity(blast_out)
+        if self._screen_this(peak):
+            return None
+        else:
+            return peak
+
+    def _max_identity(self, blast_out):
+        identities = [0]
         with open(blast_out) as blast_handle:
             for rec in NCBIXML.parse(blast_handle):
-                if self._has_oligo_match(rec):
-                    return False
-        return True
+                for align in rec.alignments:
+                    for hsp in align.hsps:
+                        identities.append(hsp.identities)
+        return max(identities)
 
-    def _has_oligo_match(self, rec):
-        """Determine if the BLAST record indicates matches to an input oligo.
+    def _screen_this(self, peak):
+        """Determine if we should screen the current peak based on settings.
         """
-        for align in rec.alignments:
-            for hsp in align.hsps:
-                if hsp.identities >= self._xreact:
-                    return True
+        if self._min_width > 0 and peak["end"] - peak["start"] < self._min_width:
+            return True
+        if self._min_height > 0 and peak["height"] < self._min_height:
+            return True
+        if self._min_count > 0 and peak["count"] < self._min_count:
+            return True
+        if self._xreact > 0 and peak["blastoligo"] >= self._xreact:
+            return True
         return False
 
     def _make_input_file(self, oligos):
@@ -259,18 +344,30 @@ def generate_inferred_coverage(bam_file):
 # These functions drive various external programs (bowtie, MACS) and handle
 # format conversions.
 
-def call_macs_peaks(exp_bed, back_bed, out_base, ref, peak_dir):
+def call_macs_peaks(exp_bed, back_bed, out_base, ref, config):
+    peak_dir = config["peak_dir"]
+    subpeaks = config["algorithm"].get("subpeaks", False)
     if not os.path.exists(peak_dir):
         os.makedirs(peak_dir)
     genome_size = _size_from_fai(_get_ref_fai(ref))
     out_name = os.path.join(peak_dir, "%s-%s-macs" %
                             (out_base.replace(" ", "_"), os.path.basename(ref)))
-    peak_file = "%s_peaks.bed" % out_name
+    ext = "peaks.subpeaks.bed" if subpeaks else "peaks.xls"
+    peak_file = "%s_%s" % (out_name, ext)
     if not os.path.exists(peak_file):
-        cl = ["macs14", "-t", exp_bed, "-c", back_bed, "--name=%s" % out_name,
+        cl = ["macs14", "-t", _full_path(exp_bed), "-c", _full_path(back_bed),
+              "--name=%s" % os.path.basename(out_name),
               "--format=BED", "--gsize=%s" % genome_size]
-        subprocess.check_call(cl)
+        if subpeaks:
+            cl += ["--call-subpeaks", "--wig"]
+        with chdir(os.path.dirname(out_name)):
+            subprocess.check_call(cl)
     return peak_file
+
+def _full_path(fname):
+    if not fname.startswith("/"):
+        fname = os.path.join(os.getcwd(), fname)
+    return fname
 
 def generate_bigwig(bed_file, ref, picard):
     genome_ref = _get_ref_fai(ref)
