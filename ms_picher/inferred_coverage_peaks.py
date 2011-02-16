@@ -13,12 +13,15 @@ Usage:
 import os
 import sys
 import csv
+import glob
+import copy
 import subprocess
 import collections
 import contextlib
 
 import yaml
 import pysam
+import rpy2.robjects as rpy
 from bx.intervals.intersection import IntervalTree
 from bx.seq.twobit import TwoBitFile
 from Bio.Blast.Applications import NcbiblastnCommandline
@@ -36,6 +39,8 @@ def main(config_file):
         align_and_call(config, config_file)
     else:
         call_from_alignments(config)
+    if config.get("custom_peak_combine", None):
+        post_combine_peaks(config)
 
 def align_and_call(config, config_file):
     """Do peak calls and alignments, starting with fastq files.
@@ -56,7 +61,7 @@ def align_and_call(config, config_file):
             bed_files[cur_fastq["name"]] = bam_to_bed(bam_file)
             inferred_bed = generate_inferred_coverage(bam_file)
             generate_bigwig(inferred_bed, ref, picard)
-        call_peaks(bed_files, ref, config)
+        call_multi_peaks(bed_files, ref, config)
 
 def call_from_alignments(config):
     """Do peak calls, starting with alignment files.
@@ -65,7 +70,16 @@ def call_from_alignments(config):
     for align in config["alignments"]:
         bed_files[align["name"]] = bam_to_bed(align["file"])
     for ref in config["ref"]:
-        call_peaks(bed_files, ref, config)
+        call_multi_peaks(bed_files, ref, config)
+
+def call_multi_peaks(bed_files, ref, config):
+    peak_algorithms = config["algorithm"]["peaks"]
+    if isinstance(peak_algorithms, dict):
+        peak_algorithms = [peak_algorithms]
+    for peak_algorithm in peak_algorithms:
+        cur_config = copy.deepcopy(config)
+        cur_config["algorithm"] = peak_algorithm
+        call_peaks(bed_files, ref, cur_config)
 
 def call_peaks(bed_files, ref, config):
     """Top level peak calling functionality.
@@ -77,23 +91,56 @@ def call_peaks(bed_files, ref, config):
     min_width = config["algorithm"].get("min_width", 0)
     min_height = config["algorithm"].get("min_height", 0)
     min_count = config["algorithm"].get("min_count", 0)
-    quick = config["algorithm"].get("output", "bed") == "bed"
+    min_score = config["algorithm"].get("min_score", 0)
+    output = config["algorithm"].get("output", "bed")
+    peak_caller = config["algorithm"].get("peak_caller", "macs")
+    ol_percent = config["algorithm"].get("overlap_percent", None)
+    peak_call_fn = _peak_caller_fn(peak_caller)
     peaks = []
     oligos = []
     for peak in config["peaks"]:
-        peaks.append(call_macs_peaks(bed_files[peak["condition"]],
-                                     bed_files[peak["background"]],
-                                     peak["condition"], ref,
-                                     config))
+        peaks.append(peak_call_fn(bed_files[peak["condition"]],
+                                  bed_files[peak["background"]],
+                                  peak["condition"], ref,
+                                  config))
         oligos.append(peak["oligos"])
     peak_screen = PeakCrossReactScreener(ref, xreact_bases, min_width, min_height,
-                                         min_count, quick, tmp_dir)
-    ol_percent = config["algorithm"].get("overlap_percent", None)
+                                         min_count, min_score, output=="bed", tmp_dir)
     if ol_percent:
         output_combine_peaks(peaks, oligos, peak_screen, ol_percent, config)
     else:
         for i, peak in enumerate(peaks):
             filter_peaks(peak, oligos[i], peak_screen, config)
+
+def _peak_caller_fn(name):
+    fns = {"pics" : call_pics_peaks,
+           "macs" : call_macs_peaks,
+           "bayespeak" : call_bayespeak_peaks}
+    return fns[name]
+
+def post_combine_peaks(config):
+    """Combine peaks from multiple peak call methods.
+    """
+    cconfig = config["custom_peak_combine"]
+    peak_dir = config["peak_dir"]
+    tmp_dir = config["tmp_dir"]
+    final_file = os.path.join(peak_dir, cconfig["name"])
+    overlaps = [os.path.join(peak_dir, f) for f in cconfig["overlap"]]
+    cur_file = overlaps[0]
+    for i, overlap in enumerate(overlaps[1:]):
+        out_file = os.path.join(tmp_dir, "%s.o%s" % (os.path.basename(overlaps[0]), i))
+        cl = ["bed_intersect.py", cur_file, overlap]
+        with open(out_file, "w") as out_handle:
+            subprocess.check_call(cl, stdout=out_handle)
+        cur_file = out_file
+    for i, avoid in enumerate(cconfig["avoid"]):
+        out_file = os.path.join(tmp_dir, "%s.a%s" % (os.path.basename(overlaps[0]), i))
+        cl = ["bed_intersect.py", "--reverse", cur_file, avoid]
+        with open(out_file, "w") as out_handle:
+            subprocess.check_call(cl, stdout=out_handle)
+        cur_file = out_file
+    os.rename(cur_file, final_file)
+    return out_file
 
 # ## Combine peaks from all experiments
 # Read peaks from a MACS style BED file for all experiments and
@@ -196,9 +243,20 @@ def _read_macs_out(peak_file):
         fn = _read_macs_xls
     elif peak_file.endswith("subpeaks.bed"):
         fn = _read_macs_subpeaks
+    elif peak_file.endswith(".bed"):
+        fn = _read_bed_peaks
+    else:
+        raise ValueError("Unexpected file %s" % peak_file)
     with open(peak_file) as in_handle:
         for p in fn(in_handle):
             yield p
+
+def _read_bed_peaks(in_handle):
+    reader = csv.reader(in_handle, dialect="excel-tab")
+    for chrom, start, end, _, score in reader:
+        width = int(end) - int(start)
+        yield dict(chrom=chrom, start=int(start), end=int(end), width=width,
+                   score=float(score))
 
 def _read_macs_subpeaks(in_handle):
     """Read peak details from a subpeaks MACS file.
@@ -241,17 +299,18 @@ def _peaks_to_intervaltree(peak_file):
 
 class PeakCrossReactScreener:
     def __init__(self, ref, xreact_bases, min_width, min_height,
-                 min_count, quick_screen, tmp_dir):
+                 min_count, min_score, quick_screen, tmp_dir):
         self._2bit = self._get_twobit(ref)
         self._xreact = xreact_bases
         self._min_width = min_width
         self._min_height = min_height
         self._min_count = min_count
+        self._min_score = min_score
         self._quick = quick_screen
         self._tmpdir = tmp_dir
 
-        print "Screening with %s oligo, %s width, %s height, %s count; quick %s" % \
-              (xreact_bases, min_width, min_height, min_count, quick_screen)
+        print "Screening with %s oligo, %s width, %s height, %s count; %s score; quick %s" % \
+              (xreact_bases, min_width, min_height, min_count, min_score, quick_screen)
 
     def _get_twobit(self, ref):
         """Retrieve bx-python 2bit class from /reference hierarchy.
@@ -299,6 +358,8 @@ class PeakCrossReactScreener:
             return True
         if self._min_count > 0 and peak["count"] < self._min_count:
             return True
+        if self._min_score > 0 and peak["score"] < self._min_score:
+            return True
         if self._xreact > 0 and peak["blastoligo"] >= self._xreact:
             return True
         return False
@@ -344,7 +405,34 @@ def generate_inferred_coverage(bam_file):
 # These functions drive various external programs (bowtie, MACS) and handle
 # format conversions.
 
+def call_bayespeak_peaks(exp_bed, back_bed, out_base, ref, config):
+    """Peak calling using BayesPeak.
+    """
+    peak_dir = config["peak_dir"]
+    if not os.path.exists(peak_dir):
+        os.makedirs(peak_dir)
+    out_file = os.path.join(peak_dir, "%s-%s-bayespeak.bed" %
+                            (out_base.replace(" ", "_"), os.path.basename(ref)))
+    if not os.path.exists(out_file):
+        rpy.r.assign("treat.bed", exp_bed)
+        rpy.r.assign("back.bed", back_bed)
+        rpy.r.assign("out.bed", out_file)
+        rpy.r('''
+        library(multicore)
+        library(BayesPeak)
+        library(rtracklayer)
+
+        raw.output <- bayespeak(treat.bed, back.bed,
+                                use.multicore=TRUE, mc.cores=4)
+        output <- summarize.peaks(raw.output, method="lowerbound")
+        output$score <- output$PP
+        export(output, out.bed)
+        ''')
+    return out_file
+
 def call_macs_peaks(exp_bed, back_bed, out_base, ref, config):
+    """Peak calling using MACS.
+    """
     peak_dir = config["peak_dir"]
     subpeaks = config["algorithm"].get("subpeaks", False)
     if not os.path.exists(peak_dir):
@@ -363,6 +451,25 @@ def call_macs_peaks(exp_bed, back_bed, out_base, ref, config):
         with chdir(os.path.dirname(out_name)):
             subprocess.check_call(cl)
     return peak_file
+
+def call_pics_peaks(exp_bed, back_bed, out_base, ref, config):
+    """Peak calling with PICS, using external R script.
+    """
+    # get mappability files
+    mfiles = glob.glob(os.path.join(os.path.dirname(ref), os.pardir, "mappability",
+                                    "%s*bed" % os.path.basename(ref)))
+    assert len(mfiles) == 1, "Could not find mappability files"
+    mfile = mfiles[0]
+    pics_script = os.path.join(os.path.dirname(__file__), "chip_seq_w_pics.R")
+    peak_dir = config["peak_dir"]
+    if not os.path.exists(peak_dir):
+        os.makedirs(peak_dir)
+    out_file = os.path.join(peak_dir, "%s-%s-PICS.bed" % (out_base.replace(" ", "_"),
+                                                          os.path.basename(ref)))
+    if not os.path.exists(out_file):
+        cl = ["Rscript", pics_script, exp_bed, back_bed, mfile, out_file]
+        subprocess.check_call(cl)
+    return out_file
 
 def _full_path(fname):
     if not fname.startswith("/"):
