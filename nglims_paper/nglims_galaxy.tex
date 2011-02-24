@@ -57,7 +57,7 @@
     Massachusetts General Hospital, Boston, MA 02114, USA
     \iid(2)Huck Institute for the Life Sciences,%
     Penn State University, University Park, PA 16803, USA
-    \iid(3)Department of Genetics, 
+    \iid(3)Department of Genetics,%
     Harvard Medical School, Boston, MA, USA
 }%
 
@@ -154,7 +154,7 @@ biologists.
 
 Here we describe a fully integrated solution that tackles these
 issues and takes full advantage of existing software and
-infrastructure. The resulting tools effectively improve \textbf{communication, or maybe information transfer}
+infrastructure. The resulting tools effectively improve communication
 between computational and laboratory researchers, enabling scientific work.
 
 \section*{Implementation}
@@ -218,7 +218,7 @@ trends and expose individual outlier runs. These allow adjustment of
 experimental procedures to maximize useful reads based on current
 machine chemistry (Figure 4).
 
-The output of processed sequencing runs -- fastq reads, alignments,
+The output of processed sequencing runs -- FASTQ reads, alignments,
 summary PDFs and other associated files -- are uploaded back
 into into Galaxy Data Libraries organized by sample names (Figure
 5). Data are only accessible by the user account that submitted the
@@ -230,11 +230,11 @@ further analysis and display.
 
 A pipeline written in the Python programming language manages a fully
 automated analysis of sequencing results (Figure 6). Runs are detected
-as they finish and reads are processed into standard fastq
+as they finish and reads are processed into standard FASTQ
 format. Details about the finished run are passed on to storage and
 analysis servers using AMQP messaging. The storage server receives
 files from the sequencing machine for long term archival and backup
-purposes. The analysis server receives fastq files in preparation for
+purposes. The analysis server receives FASTQ files in preparation for
 detailed processing.
 
 Different analysis methods can be selected by the user at the time of
@@ -286,6 +286,15 @@ case it was helped by a transparent open-source development
 methodology on the part of the Galaxy development team. For the team
 at Massachusetts General Hospital, our main challenge was adopting
 the flexibility to design within an existing system.
+
+The two teams interacted primarily via e-mail and benefited from open
+development tools and a structured software architecture. The
+distributed revision control system Mercurial (hosted at
+\url{http://bitbucket.org} was used to maintain a separate development
+branch and manage merging of code changes. Additionally, the use of
+the standard Model-View-Controller architecture in Galaxy allowed the
+MGH team to rapidly become familiar with code and productive in
+implementing changes.
 
 We hope this type of community code development will become
 increasingly common. With the continuing growth of biological data,
@@ -373,7 +382,11 @@ BAC conceived and wrote the software. RC and GVK implemented
 Galaxy components and helped with integration. MB conceived and oversaw the software
 development and AN oversaw Galaxy development.
 
+\section*{Acknowledgements}
   \ifthenelse{\boolean{publ}}{\small}{}
+  The authors thank Tammy Gillis, Shangtao Liu and Kaleena Shirley for
+  valuable feedback on the web interface and laboratory management
+  functionality.
 
 {\ifthenelse{\boolean{publ}}{\footnotesize}{\small}
  \bibliographystyle{bmc_article}  % Style BST file
