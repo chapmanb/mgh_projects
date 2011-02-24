@@ -48,7 +48,7 @@
         Anton Nekrutenko$^2$%
         \email{anton@bx.psu.edu}
       and
-         Mark Borowsky$^1$%
+         Mark L Borowsky$^{1,3}$%
          \email{borowsky@molbio.mgh.harvard.edu}%
       }
 
@@ -57,6 +57,8 @@
     Massachusetts General Hospital, Boston, MA 02114, USA
     \iid(2)Huck Institute for the Life Sciences,%
     Penn State University, University Park, PA 16803, USA
+    \iid(3)Department of Genetics, 
+    Harvard Medical School, Boston, MA, USA
 }%
 
 \maketitle
@@ -118,8 +120,8 @@ commandline, biologists can visualize and process the large amount of
 data produced by next generation sequencing platforms. For instance,
 large multiple gigabyte alignment files can be viewed directly in the
 UCSC genome browser \cite{fujita_ucsc_2011} from Galaxy, allowing
-biologists to immediately assess their sequencing data in combination
-with other genome features. In combination with the analysis tools and
+biologists to immediately assess their sequencing data and view it in the context of 
+other genome features. In combination with the analysis tools and
 visualization options, Galaxy enables reproducible research and
 collaboration between computational scientists and non-programmers by
 incorporating multi-tool workflows and sharing of computational results.
@@ -127,7 +129,7 @@ incorporating multi-tool workflows and sharing of computational results.
 A number of bioinformatics tools have emerged to help with handling
 high throughput sequencing data. Sequence alignment programs such as
 Bowtie \cite{langmead_ultrafast_2009} and BWA \cite{li_fast_2009}
-handle finding read locations within sequenced genomes. Toolkits such
+map reads to sequenced genomes. Toolkits such
 as samtools \cite{li_sequence_2009} and Picard \cite{_picard_????}
 allow manipulation and querying of resulting alignment files. Larger
 tool suites such as the Genome Analysis Toolkit
@@ -143,7 +145,7 @@ starting an analysis workflow.
 
 The solution to these challenges is to capture experimental data,
 including barcodes and run data, in a structured format. The move from
-Excel spreadsheet and lab notebook tracking allows development of the
+Excel spreadsheet and lab notebooks to database tracking allows development of the
 necessary automation, so that data is provided to researchers in a
 timely, organized manner alongside metrics of sequencing performance.
 By embedding the results within the existing Galaxy toolkit, results
@@ -152,9 +154,8 @@ biologists.
 
 Here we describe a fully integrated solution that tackles these
 issues and takes full advantage of existing software and
-infrastructure. The resulting tools effectively improve the
-challenging interactions between computational and laboratory
-researchers, enabling scientific work.
+infrastructure. The resulting tools effectively improve \textbf{communication, or maybe information transfer}
+between computational and laboratory researchers, enabling scientific work.
 
 \section*{Implementation}
 
@@ -191,9 +192,9 @@ samples.
 
 \subsubsection*{Sequencing tracking and management}
 
-Sequencing technicians have access to additional
+Sequencing lab staff have access to additional
 functionality to help manage the internal sample preparation and
-sequencing workflow. The main sample tracking interface centers around
+sequencing workflow. Samples are tracked through
 a set of queues; each queue represents a state that a sample can be
 in. Samples move through the queues as they are processed, with
 additional information being added to the sample at each step. For
