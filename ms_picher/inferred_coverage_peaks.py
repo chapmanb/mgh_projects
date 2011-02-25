@@ -18,6 +18,7 @@ import copy
 import subprocess
 import collections
 import contextlib
+import multiprocessing
 
 import yaml
 import pysam
@@ -29,6 +30,7 @@ from Bio.Blast import NCBIXML
 
 from bcbio.picard import PicardRunner
 from bcbio.picard.utils import chdir
+from bcbio.bam.counts import NormalizedBam
 
 # ## High level functions to drive process
 
@@ -39,29 +41,52 @@ def main(config_file):
         align_and_call(config, config_file)
     else:
         call_from_alignments(config)
-    if config.get("custom_peak_combine", None):
-        post_combine_peaks(config)
+    for cconfig in config.get("custom_peak_combine", []):
+        post_combine_peaks(config, cconfig)
 
 def align_and_call(config, config_file):
     """Do peak calls and alignments, starting with fastq files.
     """
-    picard = PicardRunner(config["program"]["picard"])
-    align_dir = config["align_dir"]
-    if not os.path.exists(align_dir):
-        os.makedirs(align_dir)
     for ref in config["ref"]:
+        map_fn = _multi_map_fn(config)
+        bed_info = map_fn(_align_and_bigwig,
+                          [(ref, cur_fastq, config, config_file) for cur_fastq in config["fastq"]])
         bed_files = {}
-        for cur_fastq in config["fastq"]:
-            fastq_one, fastq_two = _get_align_files(cur_fastq, config)
-            base = "%s-%s" % (cur_fastq["name"], os.path.basename(ref))
-            align_file = bowtie_to_sam(fastq_one, fastq_two, ref, base,
-                                       align_dir, config)
-            bam_file = sam_to_bam(align_file, fastq_one, fastq_two, ref,
-                                  config_file)
-            bed_files[cur_fastq["name"]] = bam_to_bed(bam_file)
+        for name, bed in bed_info:
+            bed_files[name] = bed
+        call_multi_peaks(bed_files, ref, config)
+
+def _multi_map_fn(config):
+    """Get a mapping function, potentially for multiple cores.
+    """
+    cores = int(config["algorithm"].get("num_cores", 1))
+    if cores > 1:
+        pool = multiprocessing.Pool(cores)
+        return pool.map
+    else:
+        return map
+
+def _align_and_bigwig(args):
+    def do_work(ref, cur_fastq, config, config_file):
+        picard = PicardRunner(config["program"]["picard"])
+        align_dir = config["align_dir"]
+        if not os.path.exists(align_dir):
+            os.makedirs(align_dir)
+        fastq_one, fastq_two = _get_align_files(cur_fastq, config)
+        base = "%s-%s" % (cur_fastq["name"], os.path.basename(ref))
+        align_file = bowtie_to_sam(fastq_one, fastq_two, ref, base,
+                                   align_dir, config)
+        bam_file = sam_to_bam(align_file, fastq_one, fastq_two, ref,
+                              config_file)
+        picard.run_fn("picard_index", bam_file)
+        bed_file = bam_to_bed(bam_file)
+        if fastq_two is not None:
             inferred_bed = generate_inferred_coverage(bam_file)
             generate_bigwig(inferred_bed, ref, picard)
-        call_multi_peaks(bed_files, ref, config)
+        else:
+            generate_bigwig(bed_file, ref, picard)
+        return cur_fastq["name"], bed_file
+    return do_work(*args)
 
 def call_from_alignments(config):
     """Do peak calls, starting with alignment files.
@@ -87,30 +112,40 @@ def call_peaks(bed_files, ref, config):
     tmp_dir = config["tmp_dir"]
     if not os.path.exists(tmp_dir):
         os.makedirs(tmp_dir)
+    picard = PicardRunner(config["program"]["picard"])
     xreact_bases = config["algorithm"].get("cross_react_bases", 0)
     min_width = config["algorithm"].get("min_width", 0)
     min_height = config["algorithm"].get("min_height", 0)
     min_count = config["algorithm"].get("min_count", 0)
     min_score = config["algorithm"].get("min_score", 0)
+    min_reads = config["algorithm"].get("min_reads", 0)
     output = config["algorithm"].get("output", "bed")
     peak_caller = config["algorithm"].get("peak_caller", "macs")
     ol_percent = config["algorithm"].get("overlap_percent", None)
     peak_call_fn = _peak_caller_fn(peak_caller)
     peaks = []
     oligos = []
+    bam_files = []
     for peak in config["peaks"]:
         peaks.append(peak_call_fn(bed_files[peak["condition"]],
                                   bed_files[peak["background"]],
                                   peak["condition"], ref,
                                   config))
-        oligos.append(peak["oligos"])
+        oligos.append(peak.get("oligos", []))
+        bam_file = "%s.bam" % os.path.splitext(bed_files[peak["condition"]])[0]
+        if not os.path.exists(bam_file):
+            bam_file = None
+        else:
+            bam_file = NormalizedBam(bam_file, bam_file, picard)
+        bam_files.append(bam_file)
     peak_screen = PeakCrossReactScreener(ref, xreact_bases, min_width, min_height,
-                                         min_count, min_score, output=="bed", tmp_dir)
+                                         min_count, min_score, min_reads, output=="bed",
+                                         tmp_dir)
     if ol_percent:
-        output_combine_peaks(peaks, oligos, peak_screen, ol_percent, config)
+        output_combine_peaks(peaks, oligos, bam_files, peak_screen, ol_percent, config)
     else:
         for i, peak in enumerate(peaks):
-            filter_peaks(peak, oligos[i], peak_screen, config)
+            filter_peaks(peak, oligos[i], bam_files[i], peak_screen, config)
 
 def _peak_caller_fn(name):
     fns = {"pics" : call_pics_peaks,
@@ -118,10 +153,9 @@ def _peak_caller_fn(name):
            "bayespeak" : call_bayespeak_peaks}
     return fns[name]
 
-def post_combine_peaks(config):
+def post_combine_peaks(config, cconfig):
     """Combine peaks from multiple peak call methods.
     """
-    cconfig = config["custom_peak_combine"]
     peak_dir = config["peak_dir"]
     tmp_dir = config["tmp_dir"]
     final_file = os.path.join(peak_dir, cconfig["name"])
@@ -133,7 +167,7 @@ def post_combine_peaks(config):
         with open(out_file, "w") as out_handle:
             subprocess.check_call(cl, stdout=out_handle)
         cur_file = out_file
-    for i, avoid in enumerate(cconfig["avoid"]):
+    for i, avoid in enumerate(cconfig.get("avoid", [])):
         out_file = os.path.join(tmp_dir, "%s.a%s" % (os.path.basename(overlaps[0]), i))
         cl = ["bed_intersect.py", "--reverse", cur_file, avoid]
         with open(out_file, "w") as out_handle:
@@ -179,7 +213,8 @@ class PeakOverlapper:
         ol_bases = set(range(ol['start'], ol['end']))
         return len(ol_bases & cmp_bases) / float(len(cmp_bases))
 
-def _combine_peaks(peak_files, oligos, peak_screener, overlap_percent):
+def _combine_peaks(peak_files, oligos, bam_files, peak_screener,
+                   overlap_percent):
     """Retrieve only peaks that overlap in all three experiments.
     """
     itrees = [_peaks_to_intervaltree(f) for f in peak_files]
@@ -190,21 +225,23 @@ def _combine_peaks(peak_files, oligos, peak_screener, overlap_percent):
         for peak in overlapper.final:
             yield peak
 
-def output_combine_peaks(peak_files, oligos, peak_screener, overlap_percent,
-                         config):
+def output_combine_peaks(peak_files, oligos, bam_files, peak_screener,
+                         overlap_percent, config):
     with peak_writer_prep(peak_files[0], config, "combined") as write_peak:
         if write_peak:
-            for peak in _combine_peaks(peak_files, oligos,
+            for peak in _combine_peaks(peak_files, oligos, bam_files,
                                        peak_screener, overlap_percent):
                 write_peak(peak)
 
-def filter_peaks(peak_file, oligos, peak_screener, config):
+def filter_peaks(peak_file, oligos, bam_file, peak_screener, config):
     with peak_writer_prep(peak_file, config, "filter") as write_peak:
         if write_peak:
+            peak_screener.cur_bam = bam_file
             for peak in _read_macs_out(peak_file):
                 screen_peak = peak_screener.check(peak, oligos)
                 if screen_peak:
                     write_peak(screen_peak)
+            peak_screener.cur_bam = None
 
 @contextlib.contextmanager
 def peak_writer_prep(peak_file, config, suffix):
@@ -218,7 +255,7 @@ def peak_writer_prep(peak_file, config, suffix):
         header = None
         ext = "bed"
     elif out_type == "detailed":
-        header = ["chrom", "start", "end", "width", "count", "blastoligo"]
+        header = ["chrom", "start", "end", "width", "count", "blastoligo", "readcount"]
         ext = "tsv"
     else:
         raise NotImplementedError(out_type)
@@ -232,7 +269,7 @@ def peak_writer_prep(peak_file, config, suffix):
             if out_type == "bed":
                 writer.writerow([peak["chrom"], peak["start"], peak["end"]])
             elif out_type == "detailed":
-                writer.writerow([peak[h] for h in header])
+                writer.writerow([peak.get(h, "") for h in header])
         yield _write_peak
         out_handle.close()
     else:
@@ -255,7 +292,7 @@ def _read_bed_peaks(in_handle):
     reader = csv.reader(in_handle, dialect="excel-tab")
     for chrom, start, end, _, score in reader:
         width = int(end) - int(start)
-        yield dict(chrom=chrom, start=int(start), end=int(end), width=width,
+        yield dict(chrom=chrom, start=max(int(start), 1), end=int(end), width=width,
                    score=float(score))
 
 def _read_macs_subpeaks(in_handle):
@@ -265,7 +302,7 @@ def _read_macs_subpeaks(in_handle):
     reader.next() # header
     for chrom, start, end, height, _ in reader:
         width = int(end) - int(start)
-        yield dict(chrom=chrom, start=int(start), end=int(end), width=width,
+        yield dict(chrom=chrom, start=max(int(start), 1), end=int(end), width=width,
                    height=int(height))
 
 def _read_macs_xls(in_handle):
@@ -278,13 +315,13 @@ def _read_macs_xls(in_handle):
     # read the file
     reader = csv.reader(in_handle, dialect="excel-tab")
     for chrom, start, end, width, _, count, score in (l[:7] for l in reader):
-        yield dict(chrom=chrom, start=int(start), end=int(end), width=int(width),
+        yield dict(chrom=chrom, start=max(int(start), 1), end=int(end), width=int(width),
                    count=int(count), score=float(score))
 
 def _read_bed(in_handle):
     reader = csv.reader(in_handle, dialect="excel-tab")
     for chrom, start, end in ((l[0], int(l[1]), int(l[2])) for l in reader):
-        yield dict(chrom=chrom, start=start, end=end)
+        yield dict(chrom=chrom, start=max(start, 1), end=end)
 
 def _peaks_to_intervaltree(peak_file):
     itree = collections.defaultdict(IntervalTree)
@@ -299,15 +336,18 @@ def _peaks_to_intervaltree(peak_file):
 
 class PeakCrossReactScreener:
     def __init__(self, ref, xreact_bases, min_width, min_height,
-                 min_count, min_score, quick_screen, tmp_dir):
+                 min_count, min_score, min_reads, quick_screen,
+                 tmp_dir):
         self._2bit = self._get_twobit(ref)
         self._xreact = xreact_bases
         self._min_width = min_width
         self._min_height = min_height
         self._min_count = min_count
         self._min_score = min_score
+        self._min_reads = min_reads
         self._quick = quick_screen
         self._tmpdir = tmp_dir
+        self.cur_bam = None
 
         print "Screening with %s oligo, %s width, %s height, %s count; %s score; quick %s" % \
               (xreact_bases, min_width, min_height, min_count, min_score, quick_screen)
@@ -320,11 +360,17 @@ class PeakCrossReactScreener:
         return TwoBitFile(open(fname))
 
     def check(self, peak, oligos):
+        peak["blastoligo"] = 0
+        peak["readcount"] = sys.maxint
         # shortcut the BLAST step if we can screen without it
-        if self._quick:
-            peak["blastoligo"] = 0
-            if self._screen_this(peak):
-                return None
+        if self._quick and self._screen_this(peak):
+            return None
+        # check for score and end if we screen by this
+        if self.cur_bam:
+            peak["readcount"] = self.cur_bam.read_count(peak["chrom"], peak["start"],
+                                                        peak["end"])
+        if self._quick and self._screen_this(peak):
+            return None
         # check for regions containing oligo matches
         seq = self._2bit[peak["chrom"]].get(peak["start"], peak["end"])
         blast_db = self._make_blastdb(seq)
@@ -361,6 +407,8 @@ class PeakCrossReactScreener:
         if self._min_score > 0 and peak["score"] < self._min_score:
             return True
         if self._xreact > 0 and peak["blastoligo"] >= self._xreact:
+            return True
+        if self._min_reads > 0 and peak["readcount"] < self._min_reads:
             return True
         return False
 
@@ -435,6 +483,7 @@ def call_macs_peaks(exp_bed, back_bed, out_base, ref, config):
     """
     peak_dir = config["peak_dir"]
     subpeaks = config["algorithm"].get("subpeaks", False)
+    shiftsize = config["algorithm"].get("shiftsize", None)
     if not os.path.exists(peak_dir):
         os.makedirs(peak_dir)
     genome_size = _size_from_fai(_get_ref_fai(ref))
@@ -446,9 +495,12 @@ def call_macs_peaks(exp_bed, back_bed, out_base, ref, config):
         cl = ["macs14", "-t", _full_path(exp_bed), "-c", _full_path(back_bed),
               "--name=%s" % os.path.basename(out_name),
               "--format=BED", "--gsize=%s" % genome_size]
+        if shiftsize:
+            cl += ["--nomodel", "--shiftsize=%s" % shiftsize]
         if subpeaks:
             cl += ["--call-subpeaks", "--wig"]
         with chdir(os.path.dirname(out_name)):
+            print " ".join(cl)
             subprocess.check_call(cl)
     return peak_file
 
@@ -517,7 +569,10 @@ def sam_to_bam(align_file, fastq_one, fastq_two, ref, config_file):
     return "%s-sort.bam" % os.path.splitext(align_file)[0]
 
 def _get_align_files(cur_fastq, config):
-    fnames = [os.path.join(config["fastq_dir"], f) for f in cur_fastq["files"]]
+    fastq_dir = cur_fastq.get("fastq_dir", None)
+    if not fastq_dir:
+        fastq_dir = config["fastq_dir"]
+    fnames = [os.path.join(fastq_dir, f) for f in cur_fastq["files"]]
     assert len(fnames) in [1, 2]
     if len(fnames) == 1:
         fnames.append(None)
