@@ -8,6 +8,7 @@
 \usepackage[utf8]{inputenc} %unicode support
 %\usepackage[applemac]{inputenc} %applemac support if unicode package fails
 %\usepackage[latin1]{inputenc} %UNIX support if unicode package fails
+\usepackage{hyperref} % clickable links, Brad
 \urlstyle{rm}
 
 \def\includegraphic{}
@@ -38,23 +39,36 @@
 \author{Brad A Chapman\correspondingauthor$^{1}$%
        \email{chapman@molbio.mgh.harvard.edu}%
       \and
-         Mark Borowsky$^1$%
+        Ramkrishna Chakrabarty$^2$%
+        \email{rc@bx.psu.edu}%
+      \and
+        Gregory Von Kuster$^2$%
+        \email{greg@bx.psu.edu}%
+      \and
+        Anton Nekrutenko$^2$%
+        \email{anton@bx.psu.edu}
+      and
+         Mark L Borowsky$^{1,3}$%
          \email{borowsky@molbio.mgh.harvard.edu}%
       }
 
 \address{%
     \iid(1)Department of Molecular Biology, Simches Research Center,%
     Massachusetts General Hospital, Boston, MA 02114, USA
+    \iid(2)Huck Institute for the Life Sciences,%
+    Penn State University, University Park, PA 16803, USA
+    \iid(3)Department of Genetics,%
+    Harvard Medical School, Boston, MA, USA
 }%
 
 \maketitle
 
 \begin{abstract}
   \paragraph*{Background:} Next generation sequencing technologies
-  like Illumina, SOLiD and 454 have provided core facilities with the
-  ability to produce large amounts of sequence data. Along with this
-  increased output comes the challenge of managing requests and
-  samples, tracking sequencing runs, and automating downstream
+  like Illumina, SOLiD and 454 provide small core facilities and
+  individual laboratories with the ability to produce large amounts of sequence
+  data. Along with this increased output comes the challenge of
+  managing samples, tracking sequencing runs, and automating downstream
   analyses.
   \paragraph*{Results:} We approached these challenges by developing a
   sample submission and tracking interface on top of the web-based
@@ -62,9 +76,10 @@
   analysis pipeline processes data as it arrives off the sequencer,
   uploading the results back into Galaxy.
   \paragraph*{Conclusions:} The resulting system demonstrates the
-  utility of well run community open source analysis platforms.
-  It allows small research cores to effectively process high throughput
-  data, thus enabling research scientists to quickly assess experimental
+  utility of interfacing community open source analysis platforms.
+  It addresses an urgent need among small research support core
+  facilities to easily and rapidly process high throughput data, thus
+  enabling research scientists to quickly assess experimental
   results.
 \end{abstract}
 
@@ -72,70 +87,83 @@
 
 \section*{Background}
 
-The proliferation of next-generation sequencing machines opens up
-large scale sequencing to a multitude of new users. Among these are
-Bioinformatics core facilities and individual labs, who require
-flexible interfaces for entering samples, tracking sequencing,
-processing output files and analyzing the resulting data. These
-challenges require computational developers to provide data for
-biological users in a format that can be readily queried and
-visualized.
+Once available only through large genome centers, next-generation
+sequencing machines have become accessible to a multitude of new
+users. Among these are sequencing core facilities and individual labs
+who require flexible interfaces for entering samples and tracking
+sequencing runs. These users need a computational infrastructure to
+efficiently process the large amounts of data produced by the
+instruments. This dramatic change in scale is enabled through
+utilization of automated processing pipelines, which make sequencing
+results available to biologists in a format that can be readily
+queried and visualized.
 
-The Galaxy data integration platform \cite{goecks_galaxy:_2010}
-helps ameliorate the challenge of data management for biologists
-by providing web-based analysis tools aimed at biological
-researchers. By replicating and expanding the tools a computational
-user would have available at a UNIX commandline, biologists can
-visualize and process the large amount of data produced by next
-generation sequencing platforms. For instance, large multiple gigabyte
-alignment files from multiple experiments can be viewed directly
-in the UCSC genome browser \cite{fujita_ucsc_2011} from Galaxy,
-allowing biologists to immediately view their sequencing data
-and assess experimental success. In combination with the analysis
-tools and visualization options, Galaxy enables reproducible research
-and collaboration between computational scientists and non-programmers by
-incorporating multi-tool workflows and sharing of computational
-results.
+High throughput sequencing operations face three basic data
+challenges. The first is the acquisition of accurate sample
+information from the end-user. Examples include descriptive names,
+preparation details, type of work required, and methods of
+payment. The second challenge is tracking and managing this
+information as samples move through the different steps performed in
+the sequencing lab. Typically, it is useful to track when the sample
+is received, quality control assays performed, and when and how the
+sample was actually sequenced. The last and perhaps greatest challenge
+is to rapidly return results in an intuitively useful format to the
+biologist end-user.  This includes sequencing quality metrics and
+processed genome alignments, available to the user in a format
+compatible with visualization tools such as the UCSC Genome Browser.
+
+The Galaxy data integration platform \cite{goecks_galaxy:_2010} helps
+ameliorate the challenges of data management and analysis by providing web-based
+analysis tools aimed at biological researchers. By replicating and
+expanding the tools a computational user would have available at the
+commandline, biologists can visualize and process the large amount of
+data produced by next generation sequencing platforms. For instance,
+large multiple gigabyte alignment files can be viewed directly in the
+UCSC genome browser \cite{fujita_ucsc_2011} from Galaxy, allowing
+biologists to immediately assess their sequencing data and view it in the context of 
+other genome features. In combination with the analysis tools and
+visualization options, Galaxy enables reproducible research and
+collaboration between computational scientists and non-programmers by
+incorporating multi-tool workflows and sharing of computational results.
 
 A number of bioinformatics tools have emerged to help with handling
 high throughput sequencing data. Sequence alignment programs such as
 Bowtie \cite{langmead_ultrafast_2009} and BWA \cite{li_fast_2009}
-handle finding read locations within sequenced genomes. Toolkits such
+map reads to sequenced genomes. Toolkits such
 as samtools \cite{li_sequence_2009} and Picard \cite{_picard_????}
 allow manipulation and querying of resulting alignment files. Larger
 tool suites such as the Genome Analysis Toolkit
 \cite{mckenna_genome_2010} work with aligned data to characterize
 genetic variation.
 
-A common theme of all these toolkits is a requirement for developing
-automated workflows to drive them. For instance, a variant calling
-pipeline starting from sequencing data requires more than a dozen
-individual programs. These automation requirements are becoming
-even more clear with the increase in multiplexed sequencing samples,
-which require deconvolution of barcodes prior to starting an analysis
-workflow.
+A common theme of all these tools is a requirement for developing
+automated workflows. For instance, a variant calling pipeline starting
+from sequencing data requires more than a dozen individual
+programs. Multiplexed sequencing samples further increase the need for
+automation by requiring deconvolution of barcoded samples prior to
+starting an analysis workflow.
 
-The solution to these challenges is capturing experimental data,
-including barcodes and run data, in a structured format. Moving from
-Excel spreadsheet and lab notebook tracking to this structured
-platform allows development of the necessary automation, providing
-data to researchers in a timely organized manner. By embedding the
-results within the existing Galaxy toolkit, results are immediately
-available for analysis by biologists.
+The solution to these challenges is to capture experimental data,
+including barcodes and run data, in a structured format. The move from
+Excel spreadsheet and lab notebooks to database tracking allows development of the
+necessary automation, so that data is provided to researchers in a
+timely, organized manner alongside metrics of sequencing performance.
+By embedding the results within the existing Galaxy toolkit, results
+are immediately available for further analysis and visualization by
+biologists.
 
-Here we describe our fully integration solution that tackles these
+Here we describe a fully integrated solution that tackles these
 issues and takes full advantage of existing software and
-infrastructure. The resulting tools effectively improve the
-challenging interactions between computational and laboratory
-researchers, enabling scientific work.
+infrastructure. The resulting tools effectively improve communication
+between computational and laboratory researchers, enabling scientific work.
 
 \section*{Implementation}
 
 Building an automated system for processing next-generation sequencing
-data required two components. The first is a front-end web interface,
+data requires two components. The first is a front-end web interface,
 tightly integrated with Galaxy, that provides a graphical method to
-quickly collect and manage sample data. The second is a back-end set
-of scripts which drives analysis based on sample data and reintegrates
+quickly collect and manage sample data. The second is a back-end
+pipeline which drives analysis based on sample data, reintegrating
 the results with the Galaxy front-end for researcher analysis.
 
 \subsection*{Front-end Galaxy interface}
@@ -147,16 +175,16 @@ samples for sequencing. This provides a familiar interface and central
 location for both entering sample information and retrieving and
 analyzing the sequencing data.
 
-Practically, a user begins by browsing to the sample submission
+Practically, a user begins by browsing to a sample submission
 page. There they are presented with a wizard interface which guides
 them through entry of sample details. Multiplexed samples are
 supported through a drag and drop interface (Figure 1).
 
 When all samples are entered, the user submits them as a sequencing
 project. This includes billing information and a project name to
-facilitate communication between the researcher and the core group
+facilitate communication between researchers and the core group
 about submissions (Figure 2). Users are able to view their submissions
-grouped as projects and track the state of constructs. The interface
+grouped as projects and track project status. The interface
 allows support for additional services associated with sequencing,
 like library construction, quantitation and validation. This is a
 valuable way for users to track and organize the status of their
@@ -164,9 +192,9 @@ samples.
 
 \subsubsection*{Sequencing tracking and management}
 
-Administrators and sequencing technicians have access to additional
+Sequencing lab staff have access to additional
 functionality to help manage the internal sample preparation and
-sequencing workflow. The main sample tracking interface centers around
+sequencing workflow. Samples are tracked through
 a set of queues; each queue represents a state that a sample can be
 in. Samples move through the queues as they are processed, with
 additional information being added to the sample at each step. For
@@ -175,49 +203,49 @@ the ‘Sequencing’ queue once it has been fully quantitated, with
 quantitation information entered by the sequencing technician during
 the transition.
 
-Assigning samples to flow cells occurs using a drag and drop jQueryUI
+Assigning samples to flow cells occurs using a drag and drop jQuery UI
 interface. The design is flexible to allow for placing samples across
 multiple lanes or multiplexing multiple barcoded samples into a single
 lane (Figure 3).
 
 \subsubsection*{Viewing sequencing results}
 
-Running a sequencing machine requires careful monitoring of results
-and our interface provides several ways to view this data. Raw cluster
-and read counts are linked to a list of runs. For higher level
-analyses, interactive plots are available for viewing reads over time
-and pass rates compared to read density. These allow adjustment of
+Our interface provides several ways to monitor sequencing results.
+A table shows raw cluster and read counts for each sample, with
+optional export functionality.  Interactive plots of run results over
+time and pass rates versus read density reveal longer term performance
+trends and expose individual outlier runs. These allow adjustment of
 experimental procedures to maximize useful reads based on current
 machine chemistry (Figure 4).
 
-The results of processing sequencing runs -- fastq reads, alignments
-files, summary PDFs and other associated files -- are uploaded back
+The output of processed sequencing runs -- FASTQ reads, alignments,
+summary PDFs and other associated files -- are uploaded back
 into into Galaxy Data Libraries organized by sample names (Figure
-5). Users can download results for offline work, or import them
-directly into their Galaxy history for further analysis or display.
+5). Data are only accessible by the user account that submitted the
+work request, maintaining data privacy. Users can download results for
+offline work, or import them directly into their Galaxy history for
+further analysis and display.
 
 \subsection*{Back-end analysis pipeline}
 
-Analysis files are produced by an automated pipeline of scripts
-written in the Python programming language. A script run hourly by a
-cron job detects runs as they come off the sequencer. Finished run
-results are processed into standard fastq files using Illumina
-utilities as the start point for specialized processing.
+A pipeline written in the Python programming language manages a fully
+automated analysis of sequencing results (Figure 6). Runs are detected
+as they finish and reads are processed into standard FASTQ
+format. Details about the finished run are passed on to storage and
+analysis servers using AMQP messaging. The storage server receives
+files from the sequencing machine for long term archival and backup
+purposes. The analysis server receives FASTQ files in preparation for
+detailed processing.
 
-Details about the finished run are passed on to storage and analysis
-servers using AMQP messaging. The storage server transfers files from
-the sequencing machine for long term archival and backup purposes. The
-analysis server transfers fastq files in preparation for detailed
-analyses (Figure 6).
-
-Different analysis options are available depending on the sequencing
-inputs and experimental goals. The most complete pipeline is for
-variant calling, which demonstrates the major features of the system:
+Different analysis methods can be selected by the user at the time of
+submission, depending on the sequencing inputs and experimental
+goals. The most complete pipeline is for variant calling, which
+demonstrates the major features of the system:
 
 \begin{itemize}
-  \item De-multiplex lane results into separate samples, combining
+  \item De-multiplex barcoded samples sequenced in a pool, combining
     samples run on multiple lanes \cite{cock_biopython:_2009}.
-  \item Alignment with Bowtie or BWA
+  \item Short-read alignment with Bowtie or BWA
     \cite{langmead_ultrafast_2009,li_fast_2009}.
   \item Generation of alignment and read statistics with Picard, the
     FASTX-toolkit and SolexaQA
@@ -227,14 +255,21 @@ variant calling, which demonstrates the major features of the system:
   \item Recalibration and realignment using the Genome Analysis
     Toolkit
     \cite{mckenna_genome_2010,_pysam_????,gautier_intuitive_2010}.
-  \item Variant identification with Unified Genotyper from the Genome
-    Analysis Toolkit.
+  \item Variant identification with the Genome Analysis Toolkit's
+    Unified Genotyper.
   \item Variant effect prediction using snpEff \cite{_snpeff_????}.
 \end{itemize}
 
-The pipeline is completely general and driven by open-source tools.
-Additional analysis pipelines for experimental approaches like
-ChIP-seq or RNA-seq could be readily integrated.
+Upon completion, the finalized results are automatically uploaded into
+organized Galaxy Data Libraries using the existing Galaxy API,
+completing a fully automated analysis process.
+
+The pipeline is completely general and driven by open-source
+tools. Software and analysis parameters are adjustable through a
+separate configuration file. Additional analysis pipelines for
+experimental approaches like ChIP-seq or RNA-seq could be readily
+integrated into the framework, reusing all of the existing
+functionality.
 
 \section*{Results and Discussion}
 
@@ -243,45 +278,56 @@ ChIP-seq or RNA-seq could be readily integrated.
 A unique aspect of this project is that it was undertaken
 independently by the Bioinformatics core at Massachusetts General
 Hospital, with the front-end code being subsequently integrated
-into the main Galaxy codebase. This was made possible because of the
-strong software development ethos at Galaxy. It is a well organized,
-open-source project whose development directions and goals are fully
-transparent to the greater programming community.
+into the main Galaxy distribution. This distributed development style
+amongst non-affiliated research groups is unusual in biological software
+development due to it being traditionally difficult to move into an
+unfamiliar code base and provide larger scale improvements. In our
+case it was helped by a transparent open-source development
+methodology on the part of the Galaxy development team. For the team
+at Massachusetts General Hospital, our main challenge was adopting
+the flexibility to design within an existing system.
+
+The two teams interacted primarily via e-mail and benefited from open
+development tools and a structured software architecture. The
+distributed revision control system Mercurial (hosted at
+\url{http://bitbucket.org} was used to maintain a separate development
+branch and manage merging of code changes. Additionally, the use of
+the standard Model-View-Controller architecture in Galaxy allowed the
+MGH team to rapidly become familiar with code and productive in
+implementing changes.
 
 We hope this type of community code development will become
-increasingly common. With the continuing onslaught of next-generation
-sequencing data, computational biologists will managing and analyzing
-large volumes of experimental data coming out of laboratories. One
-productive way to meet this challenge is to better train ourselves to
-build off existing frameworks, utilize open-source tools, and make our
-code more interoperable.
-
-This work would certainly not have been possible for a developer in a
-small core lab without the backbone of functionality provided by
-Galaxy.
+increasingly common. With the continuing growth of biological data,
+both through next generation sequencing and future high throughput
+data generation methods, computational biologists will need to become
+comfortable managing and analyzing large volumes of experimental
+data. One productive way to meet this challenge is to better train
+ourselves to build off existing frameworks, utilize open-source tools,
+and make our code more interoperable.
 
 \subsection*{Enabling biological research}
 
-The largest beneficiary of this work has been the biological
-researchers within our department. By establishing a structured intake
+The largest beneficiary of this work is the biological
+researcher. By establishing a structured intake
 system and automated analysis pipeline, retrieving initial results
 does not require manual work by bioinformaticians. As a result
 the time to expect an analysis of a next-generation sequencing run has
 fallen to only the computational time required for the alignments and
-post-processing.
-
-We find it an extremely positive development to get e-mails from
-biologists hours after a run is done wondering when they can have
-their data in Galaxy. The move from a model where processing would
+post-processing. The move away from a model where processing would
 require manual intervention opens up entirely new classes of
 experiments and accelerates the time between designing an experiment
 and determining whether the data fits the expected hypotheses.
 
+Structured input and automated processing ensures that analysis steps
+are fully traceable and reproducible. Building off this core principle
+of the Galaxy platform encourages reuse of scientific results, as well
+as of the underlying analysis code.
+
 \subsection*{Bioinformatics core efficiency}
 
-A secondary benefit of the automated approach is freeing
-bioinformatics core groups from the day-to-day management of
-sequencing data. It is easy for a small group to have to move into
+An additional benefit of the automated approach is freeing
+computationalists from the day-to-day management of
+sequencing data. It is easy for a small group to move into
 firefighting mode as data production overwhelms the ability to
 analyze it. With researchers handling data entry and automated systems
 taking care of initial processing tasks, computational biologists are
@@ -293,18 +339,18 @@ output.
 
 \section*{Conclusions}
 
-We describe a web based laboratory information system for
+We describe a web based information management system for
 next-generation sequencing data. By developing the entry and
 management forms inside of Galaxy, researchers get advanced analysis
 tools along with sequencing data and analysis results. The structured
 data collection of sample and sequencing information allowed the
 development of an automated back end system which moves results from
-the sequencers through specialized analysis pipelines. The resulting
+the sequencer through specialized analysis pipelines. The resulting
 infrastructure has fundamentally improved our ability to collaborate
 with laboratory researchers.
 
 This functionality was uniquely developed by an informal collaboration
-between a remote bioinformatics core group and the Galaxy development
+between a bioinformatics core group and the Galaxy development
 team. By combining several open-source toolkits and algorithms, the
 resulting system can be readily adopted by other facilities. The
 flexibility and maintainability of the code base is designed to make
@@ -322,10 +368,9 @@ The back-end analysis pipeline is available from our GitHub repository
 with installation instructions.
 
 The software is targeted for UNIX/Linux and Mac OS X platforms. A
-recent version of Python 2 (2.6+) is required for the base code.
-
-Both are made freely available for academic and commercial use
-under the permissive MIT license.
+recent version of Python 2 (2.6+) is required. The software is
+freely available for academic and commercial use under the
+permissive MIT license.
 
 \section*{Competing interests}
 
@@ -333,11 +378,15 @@ The author(s) declare that they have no competing interests.
 
 \section*{Authors contributions}
 
-BAC conceived and wrote the software. XXX and XXX implemented
-Galaxy components and helped with integration. MB oversaw the software
-development and XXX oversaw Galaxy development.
+BAC conceived and wrote the software. RC and GVK implemented
+Galaxy components and helped with integration. MB conceived and oversaw the software
+development and AN oversaw Galaxy development.
 
+\section*{Acknowledgements}
   \ifthenelse{\boolean{publ}}{\small}{}
+  The authors thank Tammy Gillis, Shangtao Liu and Kaleena Shirley for
+  valuable feedback on the web interface and laboratory management
+  functionality.
 
 {\ifthenelse{\boolean{publ}}{\footnotesize}{\small}
  \bibliographystyle{bmc_article}  % Style BST file
@@ -357,7 +406,7 @@ interaction makes specifying multiplexed barcode details painless.
 \subsection*{Figure 2 - Project submission and tracking}
 Related samples are submitted as a project. The interface allows
 researchers to follow the state of the samples through the
-preparation and sequencing process for full transparency.
+preparation and sequencing process.
 
 \url{http://www.youtube.com/watch?v=DtQG9IzpoCU}
 
