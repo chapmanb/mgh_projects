@@ -260,9 +260,10 @@ demonstrates the major features of the system:
   \item Variant effect prediction using snpEff \cite{_snpeff_????}.
 \end{itemize}
 
-Upon completion, the finalized results are automatically uploaded into
-organized Galaxy Data Libraries using the existing Galaxy API,
-completing a fully automated analysis process.
+Lanes and samples are processed concurrently, enabling scaling on
+multiple processor machines. Upon completion, the finalized results are
+automatically uploaded into organized Galaxy Data Libraries using the
+existing Galaxy API, completing a fully automated analysis process.
 
 The pipeline is completely general and driven by open-source
 tools. Software and analysis parameters are adjustable through a
@@ -384,9 +385,11 @@ development and AN oversaw Galaxy development.
 
 \section*{Acknowledgements}
   \ifthenelse{\boolean{publ}}{\small}{}
-  The authors thank Tammy Gillis, Shangtao Liu and Kaleena Shirley for
-  valuable feedback on the web interface and laboratory management
-  functionality.
+  Tammy Gillis, Shangtao Liu and Kaleena Shirley provided
+  valuable insight on the web interface and laboratory management
+  functionality. Roman Valls Guimera and Konrad Paszkiewicz eased
+  installation and configuration by patiently providing feedback
+  as early adopters of the software.
 
 {\ifthenelse{\boolean{publ}}{\footnotesize}{\small}
  \bibliographystyle{bmc_article}  % Style BST file
