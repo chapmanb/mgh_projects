@@ -22,7 +22,7 @@ from bcbio.bam.counts import NormalizedBam, random_regions
 def main(config_file):
     with open(config_file) as in_handle:
         config = yaml.load(in_handle)
-    picard = PicardRunner(config["programs"]["picard"])
+    picard = PicardRunner(config["program"]["picard"])
     bams = [NormalizedBam(align["name"], align["file"], picard)
             for align in config["alignments"]]
 
