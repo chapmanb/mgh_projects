@@ -484,6 +484,7 @@ def call_macs_peaks(exp_bed, back_bed, out_base, ref, config):
     peak_dir = config["peak_dir"]
     subpeaks = config["algorithm"].get("subpeaks", False)
     shiftsize = config["algorithm"].get("shiftsize", None)
+    largelambda = config["algorithm"].get("largelambda", None)
     if not os.path.exists(peak_dir):
         os.makedirs(peak_dir)
     genome_size = _size_from_fai(_get_ref_fai(ref))
@@ -495,6 +496,8 @@ def call_macs_peaks(exp_bed, back_bed, out_base, ref, config):
         cl = ["macs14", "-t", _full_path(exp_bed), "-c", _full_path(back_bed),
               "--name=%s" % os.path.basename(out_name),
               "--format=BED", "--gsize=%s" % genome_size]
+        if largelambda:
+            cl += ["--llocal", str(largelambda)]
         if shiftsize:
             cl += ["--nomodel", "--shiftsize=%s" % shiftsize]
         if subpeaks:
