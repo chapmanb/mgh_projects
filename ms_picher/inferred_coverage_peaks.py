@@ -1,14 +1,24 @@
 #!/usr/bin/env python
-"""Prepare peak calls for PIChER reads using inferred coverage.
+"""Prepare peak calls for PIChER reads, along with inferred coverage displays.
 
 Driver script that for each experiment:
-- Does bowtie alignments
-- Prepares inferred coverage BED files from paired end alignments
-- Uses BED files to predict peaks with MACS
-- Provides a BigWig inferred coverage display file
+- Does unique Bowtie alignments.
+- Prepares inferred coverage BigWig files from paired end alignments.
+- Uses alignments to predict peaks with MACS and BayesPeak.
+- Overlaps peak predictions and classify using peak characteristics.
 
 Usage:
   inferred_coverage_peaks.py <YAML configuration file>
+
+Requires:
+  Bowtie http://bowtie-bio.sourceforge.net/
+  MACS http://liulab.dfci.harvard.edu/MACS/
+  R with BayesPeak http://www.bioconductor.org/packages/release/bioc/html/BayesPeak.html
+  Picard http://picard.sourceforge.net/
+  pysam http://code.google.com/p/pysam/
+  rpy2 http://rpy.sourceforge.net/rpy2.html
+  bx-python https://bitbucket.org/james_taylor/bx-python
+  Biopython http://biopython.org
 """
 import os
 import sys
