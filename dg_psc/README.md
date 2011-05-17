@@ -3,12 +3,12 @@
 Looking at homeobox regulatory proteins in two species -- Drosophila and
 mammals. The active regulatory complex being studied has 4 members:
 
-| *Drosophila* | *Mammals*
-|--------------|--------
-| Ph           | Ph
-| dRing        | Ring1a, Ring1b
-| Pc           | Cbx2/M33, Cb4,6,7,8
-| Psc, Suz2    | BmiI, Mel18
+| **Drosophila** | **Mammals**
+|----------------|---------------------
+| Ph             | Ph
+| dRing          | Ring1a, Ring1b
+| Pc             | Cbx2/M33, Cb4,6,7,8
+| Psc, Suz2      | BmiI, Mel18
 
 Psc is Drosophila consists of a 5' set of domains and 3' region rich in
 charged amino acids. The homolog of Psc, BmiI contains only the 5' region and
@@ -25,10 +25,12 @@ and activity.
 
   - If first time or modified organisms, build HMM search information:
 
-           % hmmsearch Chromo_ls.hmm IPR000953.fa > IPR000953-domains.hmmsearch
-           % hmmsearch -E 10 cbx2_Pc-no_chromo-align.hmm IPR000953.fa > IPR000953-filter1.hmmsearch
-           % hmmsearch zf-C3HC4_ls.hmm IPR001841.fa > IPR001841-domains.hmmsearch
-           % hmmsearch -E 10 bmi1_psc-no_zr-align.hmm IPR001841.fa > IPR001841-filter1.hmmsearch
+          <pre><code>
+          % hmmsearch Chromo_ls.hmm IPR000953.fa > IPR000953-domains.hmmsearch
+          % hmmsearch -E 10 cbx2_Pc-no_chromo-align.hmm IPR000953.fa > IPR000953-filter1.hmmsearch
+          % hmmsearch zf-C3HC4_ls.hmm IPR001841.fa > IPR001841-domains.hmmsearch
+          % hmmsearch -E 10 bmi1_psc-no_zr-align.hmm IPR001841.fa > IPR001841-filter1.hmmsearch
+          </pre></code>
 
   - Then re-run `interpro_domain_summary.py`
 
