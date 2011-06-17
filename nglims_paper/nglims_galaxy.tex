@@ -36,29 +36,20 @@
 \title{Next generation sequencing information management and analysis
   system for Galaxy}
 
-\author{Brad A Chapman\correspondingauthor$^{1}$%
+\author{Brad A Chapman\correspondingauthor$^{1,3}$%
        \email{chapman@molbio.mgh.harvard.edu}%
-      \and
-        Ramkrishna Chakrabarty$^2$%
-        \email{rc@bx.psu.edu}%
-      \and
-        Gregory Von Kuster$^2$%
-        \email{greg@bx.psu.edu}%
-      \and
-        Anton Nekrutenko$^2$%
-        \email{anton@bx.psu.edu}
       and
-         Mark L Borowsky$^{1,3}$%
+         Mark L Borowsky$^{1,2}$%
          \email{borowsky@molbio.mgh.harvard.edu}%
       }
 
 \address{%
     \iid(1)Department of Molecular Biology, Simches Research Center,%
     Massachusetts General Hospital, Boston, MA 02114, USA
-    \iid(2)Huck Institute for the Life Sciences,%
-    Penn State University, University Park, PA 16803, USA
-    \iid(3)Department of Genetics,%
+    \iid(2)Department of Genetics,%
     Harvard Medical School, Boston, MA, USA
+    \iid(3)Harvard School of Public Health,%
+    SPH2, Room 437A, 655 Huntington Ave  Boston, MA 02115, USA
 }%
 
 \maketitle
@@ -247,9 +238,8 @@ demonstrates the major features of the system:
     samples run on multiple lanes \cite{cock_biopython:_2009}.
   \item Short-read alignment with Bowtie or BWA
     \cite{langmead_ultrafast_2009,li_fast_2009}.
-  \item Generation of alignment and read statistics with Picard, the
-    FASTX-toolkit and SolexaQA
-    \cite{_picard_????,_fastx-toolkit_????,cox_solexaqa:_2010}.
+  \item Generation of alignment and read statistics with Picard and
+    FastQC \cite{_picard_????,fastqc}.
   \item Preparation of a summary PDF with detailed statistics
     about the run and alignment.
   \item Recalibration and realignment using the Genome Analysis
@@ -260,8 +250,13 @@ demonstrates the major features of the system:
   \item Variant effect prediction using snpEff \cite{_snpeff_????}.
 \end{itemize}
 
-Lanes and samples are processed concurrently, enabling scaling on
-multiple processor machines. Upon completion, the finalized results are
+Lane and sample processing is fully parallelized, allowing scaling on
+both single multicore machines and shared filesystem clusters. As
+next-generation sequencing runs produce increasing numbers of reads in
+less time, parallel analysis pipelines will be essential to scale with
+throughput.
+
+Upon completion, the finalized results are
 automatically uploaded into organized Galaxy Data Libraries using the
 existing Galaxy API, completing a fully automated analysis process.
 
@@ -278,8 +273,9 @@ functionality.
 
 A unique aspect of this project is that it was undertaken
 independently by the Bioinformatics core at Massachusetts General
-Hospital, with the front-end code being subsequently integrated
-into the main Galaxy distribution. This distributed development style
+Hospital, with the front-end code building directly on sample tracking
+work done by the Galaxy team (Taylor et al. submitted concurrently).
+This distributed development style
 amongst non-affiliated research groups is unusual in biological software
 development due to it being traditionally difficult to move into an
 unfamiliar code base and provide larger scale improvements. In our
@@ -359,12 +355,12 @@ extending and using this software a joy.
 
 \section*{Availability and requirements}
 
-The front-end entry system is available as part of Galaxy; see
-\url{http://getgalaxy.org} for installation details and
+The front-end entry system is available from
+\url{https://bitbucket.org/chapmanb/galaxy-central}; see
 \url{https://bitbucket.org/galaxy/galaxy-central/wiki/LIMS/nglims} for
 instructions on configuration and activation.
 
-The back-end analysis pipeline is available from our GitHub repository
+The back-end analysis pipeline is available from
 (\url{https://github.com/chapmanb/bcbb/tree/master/nextgen}) along
 with installation instructions.
 
@@ -379,9 +375,8 @@ The author(s) declare that they have no competing interests.
 
 \section*{Authors contributions}
 
-BAC conceived and wrote the software. RC and GVK implemented
-Galaxy components and helped with integration. MB conceived and oversaw the software
-development and AN oversaw Galaxy development.
+BAC conceived and wrote the software.
+MB conceived and oversaw the software development.
 
 \section*{Acknowledgements}
   \ifthenelse{\boolean{publ}}{\small}{}
@@ -389,7 +384,9 @@ development and AN oversaw Galaxy development.
   valuable insight on the web interface and laboratory management
   functionality. Roman Valls Guimera and Konrad Paszkiewicz eased
   installation and configuration by patiently providing feedback
-  as early adopters of the software.
+  as early adopters of the software. Discussion with Gregory Von
+  Kuster, Anton Nekrutenko, James Taylor and the rest of the Galaxy
+  development team helped with Galaxy interoperability.
 
 {\ifthenelse{\boolean{publ}}{\footnotesize}{\small}
  \bibliographystyle{bmc_article}  % Style BST file
