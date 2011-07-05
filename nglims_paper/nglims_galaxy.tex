@@ -111,7 +111,7 @@ commandline, biologists can visualize and process the large amount of
 data produced by next generation sequencing platforms. For instance,
 large multiple gigabyte alignment files can be viewed directly in the
 UCSC genome browser \cite{fujita_ucsc_2011} from Galaxy, allowing
-biologists to immediately assess their sequencing data and view it in the context of 
+biologists to immediately assess their sequencing data and view it in the context of
 other genome features. In combination with the analysis tools and
 visualization options, Galaxy enables reproducible research and
 collaboration between computational scientists and non-programmers by
@@ -238,12 +238,12 @@ tools. Software and analysis parameters are adjustable through a
 separate configuration file. Additional analysis pipelines for
 experimental approaches like ChIP-seq or RNA-seq can be readily
 integrated into the framework, reusing all of the existing
-functionality. As an example, we integrated our variant calling pipeline, 
+functionality. As an example, we integrated our variant calling pipeline,
 which also demonstrates the major capabilities of the system:
 
 \begin{itemize}
   \item De-multiplex barcoded samples \cite{cock_biopython:_2009}.
-  \item Combine samples run on multiple lanes \cite{cock_biopython:_2009}.
+  \item Combine samples run on multiple lanes
   \item Short-read alignment with Bowtie or BWA
     \cite{langmead_ultrafast_2009,li_fast_2009}.
   \item Generation of alignment and read statistics with Picard and
@@ -268,7 +268,6 @@ Upon completion, the finalized results are
 automatically uploaded into organized Galaxy Data Libraries using the
 existing Galaxy API, completing a fully automated analysis process.
 
-
 \section*{Results and Discussion}
 
 \subsection*{Collaborative development}
@@ -289,11 +288,11 @@ the flexibility to design within an existing system.
 The two teams interacted primarily via e-mail and benefited from open
 development tools and a structured software architecture. The
 distributed revision control system Mercurial (hosted at
-\url{http://bitbucket.org} was used to maintain a separate development
+\url{http://bitbucket.org}) was used to maintain a separate development
 branch and manage merging of code changes. Additionally, the use of
-the standard Model-View-Controller architecture in Galaxy allowed the
-MGH team to rapidly become familiar with code and productive in
-implementing changes.
+the standard development architectures, like Model-View-Controller,
+in Galaxy allowed the MGH team to rapidly become productive with
+the code base.
 
 We hope this type of community code development will become
 increasingly common. With the continuing growth of biological data,
@@ -415,7 +414,7 @@ preparation and sequencing process.
 \subsection*{Figure 3 - Sample management by sequencing technicians}
 Technicians doing the sequencing work move samples through multiple
 queue states, tracking important sample details. Sequencing samples
-are placed on flowcells using a drag-drop interface.
+are organized using a drag-drop interface.
 
 \url{http://www.youtube.com/watch?v=Sjt6y1lbzVI}
 
