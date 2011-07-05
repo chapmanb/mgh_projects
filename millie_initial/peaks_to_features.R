@@ -61,7 +61,8 @@ getNcData <- function(ftype) {
   result <- result[!duplicated(result[,1]), ]
   result.rd <- RangedData(IRanges(start=as.numeric(result[,3]), end=as.numeric(result[,4]),
                  names= as.character(result[,1])), strand=result[,5],
-                 description=as.character(result[,6]), space=as.character(result[,2]))
+                 description=as.character(result[,6]), space=as.character(result[,2]),
+	         biotype=as.character(result[,7]))
 }
 
 # Associate features with peaks in the input dataframe
@@ -98,9 +99,9 @@ final.table <- NULL
 #want <- c("MACS_peak_99175", "MACS_peak_100031")
 #cur.table <- as.data.frame(input.rd)
 #cur.table <- cur.table[cur.table$name %in% want, ]
-#features <- c("ncRNA")
+features <- c("ncRNA")
 cur.table <- as.data.frame(input.rd)
-features <- c("lincRNA", "ncRNA", "miRNA", "Exon", "5utr", "3utr", "TSS")
+#features <- c("lincRNA", "ncRNA", "miRNA", "Exon", "5utr", "3utr", "TSS")
 print(summary(cur.table))
 for (ftype in features) {
   annotate <- annotateWithFeature(ens.mart, ftype, cur.table)
