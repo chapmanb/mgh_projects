@@ -99,9 +99,9 @@ final.table <- NULL
 #want <- c("MACS_peak_99175", "MACS_peak_100031")
 #cur.table <- as.data.frame(input.rd)
 #cur.table <- cur.table[cur.table$name %in% want, ]
-features <- c("ncRNA")
+#features <- c("ncRNA")
 cur.table <- as.data.frame(input.rd)
-#features <- c("lincRNA", "ncRNA", "miRNA", "Exon", "5utr", "3utr", "TSS")
+features <- c("lincRNA", "ncRNA", "miRNA", "Exon", "5utr", "3utr", "TSS")
 print(summary(cur.table))
 for (ftype in features) {
   annotate <- annotateWithFeature(ens.mart, ftype, cur.table)
