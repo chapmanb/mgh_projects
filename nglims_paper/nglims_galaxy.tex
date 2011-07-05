@@ -138,7 +138,7 @@ The solution to these challenges is to capture experimental data,
 including barcodes and run data, in a structured format. The move from
 Excel spreadsheet and lab notebooks to database tracking allows development of the
 necessary automation, so that data is provided to researchers in a
-timely, organized manner alongside metrics of sequencing performance.
+timely, organized manner alongside sequencing performance metrics.
 By embedding the results within the existing Galaxy toolkit, results
 are immediately available for further analysis and visualization by
 biologists.
@@ -164,12 +164,15 @@ the results with the Galaxy front-end for researcher analysis.
 Biologists use a local Galaxy server as an entry point to submit
 samples for sequencing. This provides a familiar interface and central
 location for both entering sample information and retrieving and
-analyzing the sequencing data.
+analyzing the sequencing data. In addition, this provides a natural mechanism
+to introduce biologists who have never used Galaxy to this resource.
 
 Practically, a user begins by browsing to a sample submission
 page. There they are presented with a wizard interface which guides
 them through entry of sample details. Multiplexed samples are
-supported through a drag and drop interface (Figure 1).
+supported through a drag and drop interface (Figure 1). Users are provided with
+a system generated sample ID that is unique within their core lab, reducing the 
+likelihood of sample tracking errors.
 
 When all samples are entered, the user submits them as a sequencing
 project. This includes billing information and a project name to
@@ -194,7 +197,7 @@ the ‘Sequencing’ queue once it has been fully quantitated, with
 quantitation information entered by the sequencing technician during
 the transition.
 
-Assigning samples to flow cells occurs using a drag and drop jQuery UI
+Configuring a sequencing run is done using a drag and drop jQuery UI
 interface. The design is flexible to allow for placing samples across
 multiple lanes or multiplexing multiple barcoded samples into a single
 lane (Figure 3).
@@ -230,12 +233,17 @@ detailed processing.
 
 Different analysis methods can be selected by the user at the time of
 submission, depending on the sequencing inputs and experimental
-goals. The most complete pipeline is for variant calling, which
-demonstrates the major features of the system:
+goals. The pipeline is completely general and driven by open-source
+tools. Software and analysis parameters are adjustable through a
+separate configuration file. Additional analysis pipelines for
+experimental approaches like ChIP-seq or RNA-seq can be readily
+integrated into the framework, reusing all of the existing
+functionality. As an example, we integrated our variant calling pipeline, 
+which also demonstrates the major capabilities of the system:
 
 \begin{itemize}
-  \item De-multiplex barcoded samples sequenced in a pool, combining
-    samples run on multiple lanes \cite{cock_biopython:_2009}.
+  \item De-multiplex barcoded samples \cite{cock_biopython:_2009}.
+  \item Combine samples run on multiple lanes \cite{cock_biopython:_2009}.
   \item Short-read alignment with Bowtie or BWA
     \cite{langmead_ultrafast_2009,li_fast_2009}.
   \item Generation of alignment and read statistics with Picard and
@@ -260,12 +268,6 @@ Upon completion, the finalized results are
 automatically uploaded into organized Galaxy Data Libraries using the
 existing Galaxy API, completing a fully automated analysis process.
 
-The pipeline is completely general and driven by open-source
-tools. Software and analysis parameters are adjustable through a
-separate configuration file. Additional analysis pipelines for
-experimental approaches like ChIP-seq or RNA-seq could be readily
-integrated into the framework, reusing all of the existing
-functionality.
 
 \section*{Results and Discussion}
 
