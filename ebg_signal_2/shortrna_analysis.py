@@ -20,7 +20,7 @@ import yaml
 import pysam
 from bx.intervals.intersection import IntervalTree
 
-from Mgh.Picard import sam
+from bcbio.pipeline.alignment import sam_to_sort_bam
 
 def main(config_file):
     with open(config_file) as in_handle:
@@ -242,8 +242,9 @@ def align_and_sort(in_file, exp, config, align_dir):
                   in_file, out_sam]
             print cl
             subprocess.check_call(cl)
-        sort_bam = sam.samtool_sam_to_sortbam(out_sam,
-                config["analysis"]["seq_genome"], config["programs"]["samtools"])
+        sort_bam = sam_to_sort_bam(out_sam, config["analysis"]["seq_genome"],
+                                   in_file, None, exp["name"], "", exp["name"],
+                                   config)
         for to_remove in [out_sam, out_bam]:
             if os.path.exists(to_remove):
                 os.remove(to_remove)
